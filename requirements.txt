@@ -1,5 +1,6 @@
 streamlit>=1.36
-psycopg2-binary>=2.9
+psycopg2-binary>=2.9        # Postgres rollback only (USE_SNOWFLAKE off)
+snowflake-connector-python>=3.12  # live backend when USE_SNOWFLAKE=1
 python-dotenv
 pandas>=2.0
 numpy

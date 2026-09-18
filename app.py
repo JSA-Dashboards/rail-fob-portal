@@ -40,9 +40,16 @@ except ModuleNotFoundError:
     pass
 
 try:
-    for _secret_key in ("BASIS_DATABASE_URL", "RIVER_DATABASE_URL", "USDA_APP_TOKEN"):
+    # Snowflake (JSA.BASIS_TRACKER for rail bids, RIVER_FOB.PUBLIC for CIF) is the
+    # live source when USE_SNOWFLAKE is set; the *_DATABASE_URL Postgres secrets
+    # remain only as a rollback. rail_data/river_data pin their own database+schema
+    # at connect time, so SNOWFLAKE_DATABASE/SCHEMA need not be set here.
+    for _secret_key in ("BASIS_DATABASE_URL", "RIVER_DATABASE_URL", "USDA_APP_TOKEN",
+                        "USE_SNOWFLAKE", "SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER",
+                        "SNOWFLAKE_PASSWORD", "SNOWFLAKE_ROLE", "SNOWFLAKE_WAREHOUSE",
+                        "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA"):
         if _secret_key in st.secrets and not os.environ.get(_secret_key):
-            os.environ[_secret_key] = st.secrets[_secret_key]
+            os.environ[_secret_key] = str(st.secrets[_secret_key])
 except Exception:
     pass  # st.secrets unavailable locally — fine, .env covers it
 
