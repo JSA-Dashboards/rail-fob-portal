@@ -300,6 +300,8 @@ def _table_actions(table_html, filename):
         f"background:{JPSI_BLUE};color:#fff;border:none;border-radius:6px;"
         "padding:6px 14px;cursor:pointer;margin-right:8px"
     )
+    if RD._in_sis():
+        return  # components.html blocked in Streamlit in Snowflake
     components.html(f"""
       <style>{_TABLE_CSS}</style>
       <div>
@@ -1285,7 +1287,8 @@ def _map_tab():
     st.markdown("### CN Rail Network Map")
     st.caption("Live embed of CN's GeoMapGuide. If it doesn't load (some networks block "
                "third-party embeds), use the link below to open it directly.")
-    components.iframe("https://cnebusiness.geomapguide.ca/", height=750, scrolling=True)
+    if not RD._in_sis():
+        components.iframe("https://cnebusiness.geomapguide.ca/", height=750, scrolling=True)
     st.markdown(
         '<div style="margin-top:8px">'
         '<a href="https://cnebusiness.geomapguide.ca/" target="_blank" '
