@@ -35,7 +35,18 @@ def _url() -> str:
         return ""   # not running inside Snowflake — no secret to fall back to
 
 
+def _in_sis() -> bool:
+    """True when running inside Streamlit in Snowflake."""
+    try:
+        import _snowflake  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def _use_snowflake() -> bool:
+    if _in_sis():
+        return True
     return os.environ.get("USE_SNOWFLAKE", "").strip().lower() in (
         "1", "true", "yes", "on")
 
@@ -78,6 +89,12 @@ def _load_private_key():
 
 
 def _sf_connect():
+    if _in_sis():
+        from snowflake.snowpark.context import get_active_session
+        conn = get_active_session().connection
+        conn.cursor().execute(f"USE DATABASE {_SF_DATABASE}")
+        conn.cursor().execute(f"USE SCHEMA {_SF_SCHEMA}")
+        return conn
     import snowflake.connector as sc
     kw = dict(
         account=os.environ["SNOWFLAKE_ACCOUNT"],
@@ -111,7 +128,8 @@ def _sf_rows(sql, params):
         cur.execute(sql, params)
         return [{k.lower(): v for k, v in r.items()} for r in cur.fetchall()]
     finally:
-        conn.close()
+        if not _in_sis():
+            conn.close()
 
 
 def _pg_rows(sql, params):
