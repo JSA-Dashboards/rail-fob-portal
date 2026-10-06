@@ -2272,7 +2272,7 @@ def _netcarry_tab():
             quotes=RTCD.quotes_from_rail(rows, corridor.market, corridor.commodity),
             asof=asof, grain=corridor.commodity, measure=measure, tab_rate_pct=rate_pct,
             load_futures=_nc_futures_history, load_prime=_nc_prime, load_fed_funds=_nc_fed_funds,
-            logo_uri=WATERMARK or None,
+            logo_uri=WATERMARK or None, scope=corridor.key,
             note="History: this corridor's weekly Spot bid in the rail archive (the old rundown reports), or its nearest forward "
                  "period where the rundown stopped posting Spot; the shipment table's forward bids are the periods posted since "
                  "August 2026.")

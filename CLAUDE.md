@@ -47,6 +47,12 @@ where the rundown stopped posting Spot — read with `return_to_carry_data.obs_f
 Gross) radio now sits above the history and drives it and the comparison. Corn 2007-08's Dec 2007 front contract (missing from the stored
 futures) comes from the vendored `data/rtc_futures_1996_2006.csv`; the engine and its tests live in the tracker (`CLAUDE.md` there).
 
+**Harvest basis (2026-10-06; Kolten: "add the ability to apply your own harvest basis into the models, but default to the calculated
+method").** The block's **Harvest basis** switch — Calculated (default) or My own, a number in cents vs Dec / Jan — measures the crop year
+being tracked: the shipment table, and the history when that year has weekly bids (the rundown's weekly Spot bids start the first
+Wednesday of October); a what-if box applies it to every year. Vendored (see the tracker's `CLAUDE.md`). The call passes
+`scope=corridor.key` so a number typed for one corridor never follows the user to another (the widget keys carry it); keep passing it.
+
 ### `net_carry_data.py` — the adapter (pure; `tests/test_net_carry_data.py`)
 
 - **Catalog:** every (source, corridor, commodity) in the `rail_fob` rows, in `rail_corridors.CORRIDORS` order. The
