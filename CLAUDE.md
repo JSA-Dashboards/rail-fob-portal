@@ -53,6 +53,11 @@ being tracked: the shipment table, and the history when that year has weekly bid
 Wednesday of October); a what-if box applies it to every year. Vendored (see the tracker's `CLAUDE.md`). The call passes
 `scope=corridor.key` so a number typed for one corridor never follows the user to another (the widget keys carry it); keep passing it.
 
+**Ship by (2026-10-12; Kolten: "limit how late the study goes ... a ground pile that at the latest has to ship by March ... default to best with
+no limits").** The block's **Ship by** box — No limit (default) or the end of a month, November to June — stops the study there: the best
+return, the by-year table, both charts and the shipment table read only the weeks / months up to it. Vendored (see the tracker's `CLAUDE.md`);
+the call needs no new argument, and the choice (`nc_rtc_ship_by_corn`) follows the user from corridor to corridor.
+
 ### `net_carry_data.py` — the adapter (pure; `tests/test_net_carry_data.py`)
 
 - **Catalog:** every (source, corridor, commodity) in the `rail_fob` rows, in `rail_corridors.CORRIDORS` order. The
