@@ -59,9 +59,10 @@ return, the by-year table, both charts and the shipment table read only the week
 the call needs no new argument, and the choice (`nc_rtc_ship_by_corn`) follows the user from corridor to corridor.
 
 **Harvest window (2026-10-12; Kolten: "we default to establishing corn basis as of Oct and for 7 weeks ... yes, add start week and number of
-weeks").** The block's **Start week** / **Number of weeks** boxes choose which weekly bids the calculated harvest basis averages (week 1 = the
-first Wednesday of October, week 0 and back = the September Wednesdays; the default 1 and 7 is the report's window). A window is the same weeks in
-every crop year; interest still starts at the report's third weekly bid. A September bid quoted off CU futures is rolled to Dec at the Dec - Sep
+weeks").** The block's **Start week** / **Number of weeks** boxes choose which weekly bids the calculated harvest basis averages (since
+2026-10-19, Kolten: "start with week zero as Sep 1": week 0 = the first Wednesday of September, so the report's window starts at week 4, or 5 when
+September has five Wednesdays, and the default is that week and 7). A window is the same weeks, counted from September, in every crop year;
+interest still starts at the report's third weekly bid. A September bid quoted off CU futures is rolled to Dec at the Dec - Sep
 spread of the last trading day before first notice; the rail corridors tag their September bids Z, so nothing is rolled here. Vendored (see the
 tracker's `CLAUDE.md`); the call needs no new argument, and the choice (`nc_rtc_win_corn_*`) follows the user from corridor to corridor.
 
