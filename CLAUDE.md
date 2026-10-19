@@ -62,7 +62,8 @@ the call needs no new argument, and the choice (`nc_rtc_ship_by_corn`) follows t
 weeks").** The block's **Start week** / **Number of weeks** boxes choose which weekly bids the calculated harvest basis averages (since
 2026-10-19, Kolten: "start with week zero as Sep 1": week 0 = the first Wednesday of September, so the report's window starts at week 4, or 5 when
 September has five Wednesdays, and the default is that week and 7). A window is the same weeks, counted from September, in every crop year;
-interest still starts at the report's third weekly bid. A September bid quoted off CU futures is rolled to Dec at the Dec - Sep
+interest still starts at the report's third weekly bid, except that a window opening BEFORE the report's moves the purchase with it (its own
+3rd bid), and the season chart starts in September (2026-10-19; own harvest basis = this year only, the every-year what-if is gone). A September bid quoted off CU futures is rolled to Dec at the Dec - Sep
 spread of the last trading day before first notice; the rail corridors tag their September bids Z, so nothing is rolled here. Vendored (see the
 tracker's `CLAUDE.md`); the call needs no new argument, and the choice (`nc_rtc_win_corn_*`) follows the user from corridor to corridor.
 
