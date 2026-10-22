@@ -69,6 +69,13 @@ corridors only archived forward periods from Aug 2026, so earlier years are the 
 spread of the last trading day before first notice; the rail corridors tag their September bids Z, so nothing is rolled here. Vendored (see the
 tracker's `CLAUDE.md`); the call needs no new argument, and the choice (`nc_rtc_win_corn_*`) follows the user from corridor to corridor.
 
+### Estimated archive weeks are hidden (2026-10-22)
+
+UP Allen Station's weekly Spot history before its actual bids (2023-05-31) was a formula, `Est Mexico Allen` / `Est Domestic Allen` = Group 3 + 20 / + 10, and carries `bid_raw = 'est'` in `rail_fob`
+(994 weeks for each of `UP Illinois (Mex)` and `(Dom)`). Kolten: "hide data that is pure estimate at least for now" — keep / exclude / delete is still open. `rail_data.get_all` and `get_dates` leave those rows out
+(`AND (bid_raw IS NULL OR bid_raw <> 'est')`; the desk's '?' stays), so the board's dates, Net Carry and Return to Carry see Allen from May 2023 only; the rows are still in the table and
+`RAIL_SHOW_ESTIMATES=1` in the environment shows them again. The tracker does the same in `database.get_rail_fob*` (see its `CLAUDE.md`). Reboot after a push.
+
 ### `net_carry_data.py` — the adapter (pure; `tests/test_net_carry_data.py`)
 
 - **Catalog:** every (source, corridor, commodity) in the `rail_fob` rows, in `rail_corridors.CORRIDORS` order. The
