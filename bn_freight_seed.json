@@ -4,7 +4,9 @@
     "Oct",
     "Nov",
     "Dec",
-    "JFM"
+    "JFM",
+    "AM",
+    "JJ"
   ],
   "defaults": {
     "as_of": "2026-10-28",

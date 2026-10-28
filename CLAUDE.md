@@ -30,7 +30,10 @@ missing / unreadable: the tab runs on the seed's defaults, says so, and a Save h
 Packages net on their FIRST named month (JFM -> Jan), so the grid's Feb/Mar only matter for periods that start there. The sheet's own Polo, IL PNW row (L49:N49) leaves the cars term
 out; the seed doesn't carry that (the old totals-based seed did, which overstated Polo's PNW FOB and the IL row of the state index by 12.5 / 30 / 22.5 cents for Sep / Oct / Nov).
 Hereford's cars rule is always / 2, as the sheet's formulas do; the sheet's H16 note (face value when under, premium when "big" under) only matters if a premium goes negative.
-To roll the index columns (e.g. add AM / AMJJ once April has an FSC), edit `index_periods` in the seed.
+The headline periods are Oct / Nov / Dec / JFM / AM / JJ (`index_periods`; edit it in the seed to roll them). A headline period the board didn't post as itself is filled
+in app.py (`_bn_infer_quote`, a (bid, offer) pair from ONE posting; display only, the archive is untouched): Split <month> (treated as the full month — it wins over FH/LH, so a stray
+LH Nov can't drag Nov down) > FH/LH average (or the lone half) > the containing package (AM and JJ from AMJJ) > for Oct/Nov/Dec the OND package, reverse-averaged against Oct. The
+secondary freight sheet draws the shuttle quotes in the delivered board's grid format (periods across, bid with the offer in blue, BNSF / as-of chips).
 
 ## 💵 Net Carry tab (the last tab)
 

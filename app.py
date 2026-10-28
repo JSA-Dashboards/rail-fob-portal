@@ -943,69 +943,81 @@ _BN_TARGET_MONTHS = tuple(FD.load_bn_index_periods())
 _BN_TARGET_BY_LOWER = {m.lower(): m for m in _BN_TARGET_MONTHS}
 
 
-def _bn_sibling_bid(cells, *labels):
-    """First matching period's bid among the given exact labels
-    (case-insensitive) — None if that period isn't posted or has no bid."""
+# A headline period with no posting of its own takes its package's: AM and JJ both sit inside AMJJ.
+_BN_FILL_PACKAGES = {"AM": ("AMJJ",), "JJ": ("AMJJ",)}
+
+
+def _bn_pair(cells, *labels):
+    """(bid, offer) of the first matching period (exact label, case-insensitive) that has a bid —
+    None if none does."""
     by_lower = {p.lower(): c for p, c in cells.items()}
     for lbl in labels:
         c = by_lower.get(lbl.lower())
         if c and c.get("bid") is not None:
-            return c["bid"]
+            return (c["bid"], c.get("offer"))
     return None
 
 
-def _bn_infer_month_bid(cells, month):
-    """Best-effort bid for one of the window's periods (_BN_TARGET_MONTHS)
-    when it wasn't posted as its own literal period that day, from whatever
-    partial pieces WERE posted (Kolten's call, 2026-08-26 — only bother for
-    the "big" periods, not every smaller package). Display-only for FOB
-    purposes — never writes back to the archive, and the raw Rail FOB grid
-    still shows only what was literally posted. Tries, in order:
-      1. FH/LH <month> averaged (or whichever one exists, if only one does)
-      2. Split <month>, treated the same as a literal posting
-      3. for Oct/Nov/Dec only: the OND package (Oct/Nov/Dec combined) — used
-         directly for Oct, or reverse-averaged against Oct for Nov and Dec
-         (assuming OND = (Oct+Nov+Dec)/3 and Nov≈Dec) when Oct is otherwise
-         known; a straight OND substitution if Oct isn't known either.
+def _bn_mean(a, b):
+    """Midpoint, or whichever side exists."""
+    return b if a is None else a if b is None else (a + b) / 2
+
+
+def _bn_infer_quote(cells, month):
+    """Best-effort (bid, offer) for one of the headline periods (_BN_TARGET_MONTHS) when it wasn't
+    posted as its own literal period that day, from whatever partial pieces WERE posted (Kolten's
+    call, 2026-08-26 — only bother for the "big" periods, not every smaller package). Display-only
+    for FOB purposes — never writes back to the archive, and the raw Rail FOB grid still shows only
+    what was literally posted. The offer comes from the same posting as the bid. Tries, in order:
+      1. Split <month>, treated as the full month (the basis tracker's rule: a full month wins)
+      2. FH/LH <month> averaged (or whichever one exists, if only one does)
+      3. the package that contains it (AM and JJ from AMJJ)
+      4. for Oct/Nov/Dec only: the OND package (Oct/Nov/Dec combined) — used directly for Oct, or
+         reverse-averaged against Oct for Nov and Dec (assuming OND = (Oct+Nov+Dec)/3 and Nov≈Dec)
+         when Oct is otherwise known; a straight OND substitution if Oct isn't known either.
     JFM (a package already) gets steps 1-2 only, otherwise just what's posted."""
-    direct = _bn_sibling_bid(cells, month)
-    if direct is not None:
+    direct = _bn_pair(cells, month)
+    if direct:
         return direct
-    fh = _bn_sibling_bid(cells, f"FH {month}")
-    lh = _bn_sibling_bid(cells, f"LH {month}")
-    if fh is not None and lh is not None:
-        return (fh + lh) / 2
-    if fh is not None:
-        return fh
-    if lh is not None:
-        return lh
-    split = _bn_sibling_bid(cells, f"Split {month}")
-    if split is not None:
+    split = _bn_pair(cells, f"Split {month}")
+    if split:
         return split
+    fh, lh = _bn_pair(cells, f"FH {month}"), _bn_pair(cells, f"LH {month}")
+    if fh and lh:
+        return ((fh[0] + lh[0]) / 2, _bn_mean(fh[1], lh[1]))
+    if fh or lh:
+        return fh or lh
+    for pkg in _BN_FILL_PACKAGES.get(month, ()):
+        q = _bn_pair(cells, pkg)
+        if q:
+            return q
     if month in ("Oct", "Nov", "Dec"):
-        ond = _bn_sibling_bid(cells, "OND", "LH OND", "FH OND")
-        if ond is not None:
+        ond = _bn_pair(cells, "OND", "LH OND", "FH OND")
+        if ond:
             if month == "Oct":
                 return ond
-            oct_val = _bn_infer_month_bid(cells, "Oct")
-            if oct_val is not None and oct_val != ond:
-                return (3 * ond - oct_val) / 2
+            oct_q = _bn_infer_quote(cells, "Oct")
+            if oct_q and oct_q[0] != ond[0]:
+                off = (3 * ond[1] - oct_q[1]) / 2 if ond[1] is not None and oct_q[1] is not None else None
+                return ((3 * ond[0] - oct_q[0]) / 2, off)
             return ond
     return None
 
 
-def _bn_effective_bid(cells, period):
-    """The literal bid if posted, else a best-effort inferred value — but
-    only for the window's target periods (_BN_TARGET_MONTHS); every other
-    period (FH Dec, Split Nov, OND, ...) stays exactly as posted, blank if
-    it wasn't."""
-    direct = cells.get(period, {}).get("bid")
-    if direct is not None:
-        return direct
+def _bn_effective_quote(cells, period):
+    """(bid, offer) as posted if the period has a bid, else a best-effort inferred pair — but only for
+    the headline periods (_BN_TARGET_MONTHS); every other period (FH Dec, Split Nov, OND, ...) stays
+    exactly as posted, blank if it wasn't."""
+    c = cells.get(period) or {}
+    if c.get("bid") is not None:
+        return (c["bid"], c.get("offer"))
     target = _BN_TARGET_BY_LOWER.get(period.strip().lower())
-    if target:
-        return _bn_infer_month_bid(cells, target)
-    return None
+    return _bn_infer_quote(cells, target) if target else None
+
+
+def _bn_effective_bid(cells, period):
+    q = _bn_effective_quote(cells, period)
+    return q[0] if q else None
 
 
 def _bn_variant_row(cells, month_rates_cpb, periods):
@@ -1096,25 +1108,34 @@ def _bn_fsc_line(payload):
 
 
 def _bn_secondary_table(payload):
-    """The saved shuttle quotes as a sheet like the desk's bids / offers (Period, Bid, Offer), with
-    the FSC as a quiet line underneath. Edited in the BN freight inputs section at the bottom."""
+    """The saved shuttle quotes laid out like the delivered-quotes board above it: the shuttle periods across,
+    bid with the offer in blue beside it, the FSC as a quiet line underneath. Edited in BN freight inputs below."""
     st.markdown("### Secondary freight")
+    quotes = payload.get("quotes", [])
     try:
-        asof = f"{date.fromisoformat(payload['as_of']):%b %d}".replace(" 0", " ")
+        d = date.fromisoformat(payload["as_of"])
+        asof = f'<span class="asof-chip">as of {d.month}/{d.day}</span>'
     except (KeyError, TypeError, ValueError):
-        asof = payload.get("as_of") or ""
-    fmt = lambda v: f"{v:,.0f}" if v is not None else "–"
-    html = ['<table class="sheet"><tbody>',
-            f'<tr class="section"><td colspan="3">BN 110-car shuttles{" · as of " + asof if asof else ""}</td></tr>',
-            '<tr><th class="lblhdr">Period</th><th>Bid</th><th>Offer</th></tr>']
-    for q in payload.get("quotes", []):
-        html.append(f'<tr><td class="lbl">{_esc(str(q["period"]))}</td>'
-                    f'<td>{fmt(q.get("bid"))}</td><td>{fmt(q.get("offer"))}</td></tr>')
-    html.append('</tbody></table>')
+        asof = ""
+    n = lambda v: f"{v:,.0f}"
+
+    def cell(q):
+        bid, off = q.get("bid"), q.get("offer")
+        if bid is None and off is None:
+            return "<td>—</td>"
+        return "<td>" + (n(bid) if bid is not None else "—") + (
+            f' <span class="off">/ {n(off)}</span>' if off is not None else "") + "</td>"
+
+    html = ['<table class="sheet"><tbody><tr><th class="lblhdr">Shuttle</th>']
+    html += [f'<th>{_esc(str(q["period"]))}</th>' for q in quotes]
+    html.append('</tr><tr><td class="lbl">BN 110-car'
+                f'<span class="rail-chip" style="background:{RAIL_COLORS.get("BNSF", "#64748b")}">BNSF</span>{asof}</td>')
+    html += [cell(q) for q in quotes]
+    html.append('</tr></tbody></table>')
     table_html = ''.join(html)
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
     _table_actions(table_html, "bn_secondary_freight.png")
-    st.markdown(f'<div class="legend">&#36;/car over the tariff, bid is what the freight uses. '
+    st.markdown(f'<div class="legend">&#36;/car over the tariff, bid / offer; the bid is what the freight uses. '
                 f'FSC &#36;/mile: {_bn_fsc_line(payload)}. Update both in BN freight inputs at the bottom.</div>',
                 unsafe_allow_html=True)
 
@@ -1217,15 +1238,20 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window):
     def gl(i):
         return " gl" if i == 0 else ""
 
-    def bid_txt(v):
-        return "—" if v is None else (f"{v:+.0f}" if float(v).is_integer() else f"{v:+.1f}")
+    def num(v):
+        return f"{v:+.0f}" if float(v).is_integer() else f"{v:+.1f}"
+
+    def quote_html(q):
+        if q is None:
+            return "—"
+        return num(q[0]) + (f' <span class="off">/ {num(q[1])}</span>' if q[1] is not None else "")
 
     html = ['<table class="sheet"><tbody>',
             '<tr><th class="title" rowspan="3">FOB BN</th>'
             + ''.join(f'<th class="grp gl" colspan="{n}">{p}</th>' for p in periods) + '</tr>',
             '<tr>' + ''.join(f'<th class="sub{gl(i)}">{dest}</th>'
                              for _ in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
-            '<tr>' + ''.join(f'<td class="bidrow{gl(i)}">{bid_txt(_bn_effective_bid(cells_by_dest[dest], p))}</td>'
+            '<tr>' + ''.join(f'<td class="bidrow{gl(i)}">{quote_html(_bn_effective_quote(cells_by_dest[dest], p))}</td>'
                              for p in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
             '<tr class="carsrow"><td class="lbl">BN Car Val / FSC per Mi</td>']
     for p in periods:
@@ -1253,8 +1279,8 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window):
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
     _table_actions(table_html, "bn_fob_by_origin.png")
     st.markdown(
-        '<div class="legend">¢/bu, bid − freight: negatives in parentheses. The yellow row is the bid used (FH+LH '
-        "averaged, a Split month or the OND package filled in where that period wasn't posted). BN Car Val is the "
+        '<div class="legend">¢/bu, bid − freight: negatives in parentheses. The yellow row is the bid / offer used (a Split '
+        "month, FH+LH averaged or the OND / AMJJ package filled in where that period wasn't posted). BN Car Val is the "
         'secondary-market shuttle bid in &#36;/car (Hereford takes half) and FSC is &#36;/mile, both from the inputs '
         'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide).</div>',
         unsafe_allow_html=True)
@@ -1326,8 +1352,9 @@ def _bn_tab(sel_date):
         "Hereford half) — see the freight build and the BN freight inputs below. "
         f'For the {" / ".join(_BN_TARGET_MONTHS)} columns specifically, a bid not posted that '
         'literal day is filled in best-effort from whatever partial pieces WERE posted — FH+LH '
-        'averaged, a Split-month quote used directly, or (for Oct/Nov/Dec) the OND package, '
-        'reverse-averaged against Oct when Oct is known — before falling back to "—"; every '
+        'averaged, a Split-month quote used as the month, the AMJJ package for AM / JJ, or (for '
+        'Oct/Nov/Dec) the OND package reverse-averaged against Oct when Oct is known — before '
+        'falling back to "—"; every '
         'other, smaller period (FH Dec, Split Nov, OND itself, ...) is shown exactly as posted, '
         f'no inference. All {len(rows)} BN origins are shown (the workbook has no separate '
         'highlighted subset for this railroad). Blue = the better destination for that '
