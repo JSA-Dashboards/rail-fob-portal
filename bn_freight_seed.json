@@ -8,6 +8,7 @@
   ],
   "defaults": {
     "as_of": "2026-10-28",
+    "hold_fsc": true,
     "quotes": [
       {
         "period": "Return Trip",

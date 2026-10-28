@@ -1078,19 +1078,20 @@ def _bn_save(payload):
 
 def _bn_fsc_line(payload):
     """The monthly FSC as one subtle line: consecutive months with the same value are folded
-    (Jan–Mar 0.50) and months with none are called out as not yet entered."""
-    by_key = {m["key"]: m.get("fsc") for m in payload.get("months", [])}
+    (Jan–Mar 0.50), months held flat from the last entered one are marked as held, and months
+    with none are called out as not yet entered."""
     groups = []
-    for n in BNI.MONTH_ORDER:
-        label, v = BNI.month_key(n).title(), by_key.get(BNI.month_key(n))
-        if groups and groups[-1][2] == v:
-            groups[-1][1] = label
+    for r in BNI.month_rows(payload):
+        v, held = r["fsc"], r["fsc_source"].startswith("held")
+        if groups and groups[-1][2] == v and groups[-1][3] == held:
+            groups[-1][1] = r["label"]
         else:
-            groups.append([label, label, v])
+            groups.append([r["label"], r["label"], v, held])
     parts = []
-    for a, b, v in groups:
+    for a, b, v, held in groups:
         span = a if a == b else a + "–" + b
-        parts.append(f"{span} {v:.2f}" if v is not None else f"{span} not yet entered")
+        parts.append("%s %.2f%s" % (span, v, " (held flat)" if held else "") if v is not None
+                     else f"{span} not yet entered")
     return " · ".join(parts)
 
 
@@ -1159,18 +1160,25 @@ def _bn_inputs_section(state):
                            "cars_override": st.column_config.NumberColumn(
                                "Cars override $/car", format="%.0f",
                                help="Replaces the shuttle-derived premium for that month.")})
-        st.caption("A month with no FSC has no freight yet, so its bids show — until one is entered.")
+        hold = st.checkbox("Hold the last FSC flat for months with none",
+                           value=payload.get("hold_fsc", True), key=f"bn_hold_{ver}",
+                           help="BN sets the surcharge month by month, so months past the last one you've entered "
+                                "stay steady at it until the next is entered. Off: a month with no FSC has no freight.")
+        st.caption("Leave a month blank to hold the latest FSC; type one to replace it, and every later blank month "
+                   "follows it.")
 
     new_payload = {
         "as_of": as_of.isoformat(),
+        "hold_fsc": hold,
         "quotes": [{"period": str(r.period).strip(), "bid": _num(r.bid), "offer": _num(r.offer)}
                    for r in edited_q.itertuples() if isinstance(r.period, str) and r.period.strip()],
         "months": [{"key": str(r.month).lower(), "fsc": _num(r.fsc), "cars_override": _num(r.cars_override)}
                    for r in edited_m.itertuples()],
     }
     st.markdown("**What the freight will use**")
-    preview = pd.DataFrame([{"Month": r["label"], "FSC $/mile": r["fsc"], "BN Cars $/car (PNW)": r["cars"],
-                             "Hereford (÷ 2)": r["cars"] / 2, "From": r["cars_source"]}
+    preview = pd.DataFrame([{"Month": r["label"], "FSC $/mile": r["fsc"], "FSC from": r["fsc_source"],
+                             "BN Cars $/car (PNW)": r["cars"], "Hereford (÷ 2)": r["cars"] / 2,
+                             "Cars from": r["cars_source"]}
                             for r in BNI.month_rows(new_payload)])
     st.dataframe(preview, hide_index=True, width="stretch",
                  column_config={"FSC $/mile": st.column_config.NumberColumn(format="%.2f"),
@@ -1311,7 +1319,8 @@ def _bn_tab(sel_date):
         '&#36;/car ÷ 4000 bu/car × 100). Unlike CSX/NS, BN publishes rates by month rather than '
         f'one flat number — currently <b>{published_disp}</b> — a period nets against freight '
         'only when its first named month has one (a package like JFM nets on its first month, '
-        'Jan); everything else shows "—" until that month has an FSC entered below. '
+        'Jan); everything else shows "—" until that month has an FSC (entered, or held flat from '
+        'the latest one — see the inputs below). '
         "Freight &#36;/car = face rate + lane miles × that month's fuel surcharge &#36;/mile + "
         "that month's BN Cars premium (the secondary-market shuttle bid; PNW takes all of it, "
         "Hereford half) — see the freight build and the BN freight inputs below. "

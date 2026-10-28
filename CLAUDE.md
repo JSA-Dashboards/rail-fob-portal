@@ -18,7 +18,8 @@ taking cars / 2, / 4000 bu/car for cents. `bn_freight_seed.json` holds the per-o
 on a roll), and `defaults`: the inputs used until something is saved. The two inputs that move are **fed on the BN tab** (the "BN freight inputs" section at the bottom of the tab: shuttle quote editor, FSC grid, preview, Save). The saved quotes also show as a read-only bids/offers-style
 "Secondary freight" sheet right under the delivered PNW / Hereford quotes, with the FSC as a quiet line below it (`_bn_secondary_table`):
 the secondary-market **BN 110-car shuttle quotes** (bid / offer by shuttle period, the daily sheet Kolten gets) and the **FSC $/mile by month** (a 12-row Oct..Sep grid,
-plus an optional per-month cars override). A month with no FSC has no freight, so its bids show "—" until one is entered — that is how more months get added.
+plus an optional per-month cars override). A month with no FSC of its own takes the last entered month's, **held flat** (payload `hold_fsc`, default on, also for payloads saved before the option existed; the checkbox in the
+inputs turns it off, and then a month with no FSC has no freight, its bids showing "—"). Typing a month replaces it and every later blank month follows.
 
 `bn_inputs.py` (pure + the Snowflake IO; `tests/test_bn_inputs.py`): the BID is the premium; a month takes its own full-month quote, else the midpoint of its F/H and L/H
 bids (lone half if only one), else the NARROWEST package covering it (Jan-Feb-Mar, April-May, April-July, ...); a quote with no bid ('-') doesn't count, so the month falls

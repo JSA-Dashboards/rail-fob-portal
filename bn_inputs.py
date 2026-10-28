@@ -111,11 +111,14 @@ def default_payload():
 
 def month_rows(payload):
     """Per month in crop-year order: key, fsc, the BN Cars $/car the freight will use and
-    where it came from — what the tab shows as a preview and what effective_window()
-    keeps (the months with an FSC)."""
+    where each came from — what the tab shows as a preview and what effective_window()
+    keeps (the months with an FSC). A month with no FSC of its own takes the last entered
+    month's, held flat (payload "hold_fsc", on unless switched off — Kolten, 2026-10-28:
+    forward months stay steady at the latest FSC until BN's next one is entered)."""
     derived = cars_by_month(payload.get("quotes", []))
     by_key = {m["key"]: m for m in payload.get("months", [])}
-    out = []
+    hold = payload.get("hold_fsc", True)
+    out, last = [], None
     for n in MONTH_ORDER:
         key = month_key(n)
         mo = by_key.get(key, {})
@@ -126,7 +129,15 @@ def month_rows(payload):
             cars, src = derived[n]
         else:
             cars, src = 0.0, "no bid quoted"
-        out.append({"key": key, "label": key.title(), "fsc": mo.get("fsc"), "cars": cars, "cars_source": src})
+        fsc = mo.get("fsc")
+        if fsc is not None:
+            last, fsc_src = (key.title(), fsc), "entered"
+        elif hold and last is not None:
+            fsc, fsc_src = last[1], f"held flat from {last[0]}"
+        else:
+            fsc_src = ""
+        out.append({"key": key, "label": key.title(), "fsc": fsc, "fsc_source": fsc_src,
+                    "cars": cars, "cars_source": src})
     return out
 
 
