@@ -109,14 +109,17 @@ def default_payload():
     return copy.deepcopy(FD.load_bn_seed()["defaults"])
 
 
-def month_rows(payload):
+def month_rows(payload, auto=None):
     """Per month in crop-year order: key, fsc, the BN Cars $/car the freight will use and
     where each came from — what the tab shows as a preview and what effective_window()
-    keeps (the months with an FSC). A month with no FSC of its own takes the last entered
-    month's, held flat (payload "hold_fsc", on unless switched off — Kolten, 2026-10-28:
-    forward months stay steady at the latest FSC until BN's next one is entered)."""
+    keeps (the months with an FSC).
+    FSC: in formula mode (payload "fsc_mode", the default) a month's FSC is what bn_fsc computes from diesel
+    (`auto`, bn_fsc.auto_table), unless Kolten typed an override for it. Without `auto` (no EIA key, or EIA
+    unreachable) — or in "typed" mode — it's the typed FSC, and a month with none takes the last entered
+    month's, held flat (payload "hold_fsc", on unless switched off)."""
     derived = cars_by_month(payload.get("quotes", []))
     by_key = {m["key"]: m for m in payload.get("months", [])}
+    formula = payload.get("fsc_mode", "formula") == "formula" and bool(auto)
     hold = payload.get("hold_fsc", True)
     out, last = [], None
     for n in MONTH_ORDER:
@@ -129,24 +132,34 @@ def month_rows(payload):
             cars, src = derived[n]
         else:
             cars, src = 0.0, "no bid quoted"
-        fsc = mo.get("fsc")
-        if fsc is not None:
-            last, fsc_src = (key.title(), fsc), "entered"
-        elif hold and last is not None:
-            fsc, fsc_src = last[1], f"held flat from {last[0]}"
+        if formula:
+            typed = mo.get("fsc_override")
+            if typed is not None:
+                fsc, fsc_src = typed, "override"
+            elif key in auto:
+                fsc, fsc_src = auto[key]["fsc"], "formula: " + auto[key]["basis"]
+            else:
+                fsc, fsc_src = None, ""
         else:
-            fsc_src = ""
+            fsc = mo.get("fsc")
+            if fsc is not None:
+                last, fsc_src = (key.title(), fsc), "entered"
+            elif hold and last is not None:
+                fsc, fsc_src = last[1], f"held flat from {last[0]}"
+            else:
+                fsc_src = ""
         out.append({"key": key, "label": key.title(), "fsc": fsc, "fsc_source": fsc_src,
+                    "fsc_kind": auto[key]["kind"] if formula and key in auto and fsc_src.startswith("formula") else "",
                     "cars": cars, "cars_source": src})
     return out
 
 
-def effective_window(payload):
+def effective_window(payload, auto=None):
     """What freight_data.load_bn() takes: [{key, label, fsc_per_mile, cars}], only for
     months that have an FSC — a month with none yet has no freight (its bids show '—')
     until one is entered."""
     return [{"key": r["key"], "label": r["label"], "fsc_per_mile": float(r["fsc"]), "cars": r["cars"]}
-            for r in month_rows(payload) if r["fsc"] is not None]
+            for r in month_rows(payload, auto) if r["fsc"] is not None]
 
 
 def problems(payload):
@@ -156,8 +169,9 @@ def problems(payload):
         if q.get("period") and period_months(q["period"])[1] == "none" and "return" not in q["period"].lower():
             out.append(f"'{q['period']}' names no month, so it isn't used")
     for m in payload.get("months", []):
-        if m.get("fsc") is not None and not 0 <= m["fsc"] <= 5:
-            out.append(f"{m['key'].title()} FSC {m['fsc']} looks off ($/mile)")
+        for f in ("fsc", "fsc_override"):
+            if m.get(f) is not None and not 0 <= m[f] <= 5:
+                out.append(f"{m['key'].title()} FSC {m[f]} looks off ($/mile)")
     return out
 
 

@@ -18,7 +18,13 @@ taking cars / 2, / 4000 bu/car for cents. `bn_freight_seed.json` holds the per-o
 on a roll), and `defaults`: the inputs used until something is saved. The two inputs that move are **fed on the BN tab** (the "BN freight inputs" section at the bottom of the tab: shuttle quote editor, FSC grid, preview, Save). The saved quotes also show as a read-only bids/offers-style
 "Secondary freight" sheet right under the delivered PNW / Hereford quotes, with the FSC as a quiet line below it (`_bn_secondary_table`):
 the secondary-market **BN 110-car shuttle quotes** (bid / offer by shuttle period, the daily sheet Kolten gets) and the **FSC $/mile by month** (a 12-row Oct..Sep grid,
-plus an optional per-month cars override). A month with no FSC of its own takes the last entered month's, **held flat** (payload `hold_fsc`, default on, also for payloads saved before the option existed; the checkbox in the
+plus an optional per-month cars override). **FSC is a formula by default (`bn_fsc.py`, `tests/test_bn_fsc.py`):** 1 cent/mile for every 5 cents the monthly average of EIA's weekly US on-highway diesel, TWO months earlier, sits above a
+$3.25 strike (each started step counts). Not from BNSF's rule text (Item 3377-Series — the grain price lists cite its $3.25 strike, the rule itself isn't public): it was fitted to the surcharges
+Kolten has had and reproduces all four exactly (Aug .36, Sep .35, Oct .45, Nov .61; a one-month lag would not) — check each new month BN publishes against it. A month whose source month is
+complete is "published", one whose source month is still open uses the average so far, and further out the latest weekly price is held flat (a stand-in for a diesel forecast). Needs the
+`EIA_API_KEY` secret (the portal bridges it into the environment; weekly diesel cached 6 h); without it or if EIA is down the tab says so and uses the typed FSC. In the inputs the grid becomes an
+**override** column in formula mode (`fsc_override`, wins over the formula); "Typed values" mode (`fsc_mode`) is the older typed-FSC grid. When there is no formula (or in typed mode):
+A month with no FSC of its own takes the last entered month's, **held flat** (payload `hold_fsc`, default on, also for payloads saved before the option existed; the checkbox in the
 inputs turns it off, and then a month with no FSC has no freight, its bids showing "—"). Typing a month replaces it and every later blank month follows.
 
 `bn_inputs.py` (pure + the Snowflake IO; `tests/test_bn_inputs.py`): the BID is the premium; a month takes its own full-month quote, else the midpoint of its F/H and L/H

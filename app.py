@@ -28,6 +28,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+import bn_fsc as BNF
 import bn_inputs as BNI
 import freight_data as FD
 import rail_data as RD
@@ -72,7 +73,7 @@ try:
     # live source when USE_SNOWFLAKE is set; the *_DATABASE_URL Postgres secrets
     # remain only as a rollback. rail_data/river_data pin their own database+schema
     # at connect time, so SNOWFLAKE_DATABASE/SCHEMA need not be set here.
-    for _secret_key in ("BASIS_DATABASE_URL", "RIVER_DATABASE_URL", "USDA_APP_TOKEN",
+    for _secret_key in ("BASIS_DATABASE_URL", "RIVER_DATABASE_URL", "USDA_APP_TOKEN", "EIA_API_KEY",
                         "USE_SNOWFLAKE", "SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER",
                         "SNOWFLAKE_PASSWORD", "SNOWFLAKE_ROLE", "SNOWFLAKE_WAREHOUSE",
                         "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA"):
@@ -1088,26 +1089,47 @@ def _bn_save(payload):
     st.rerun()
 
 
-def _bn_fsc_line(payload):
-    """The monthly FSC as one subtle line: consecutive months with the same value are folded
-    (Jan–Mar 0.50), months held flat from the last entered one are marked as held, and months
-    with none are called out as not yet entered."""
+@st.cache_data(ttl=21600)
+def _bn_weekly_diesel(anchor_year):
+    """(EIA weekly US diesel [(Monday, $/gal)] | None, why not | None)."""
+    if not BNF.available():
+        return None, "no EIA_API_KEY"
+    try:
+        return BNF.fetch_weekly(date(anchor_year, 7, 1)), None
+    except Exception as e:
+        return None, str(e)
+
+
+def _bn_auto_fsc():
+    """(the FSC table the BN formula gives from diesel | None, the weekly diesel | None, why not | None)."""
+    weekly, err = _bn_weekly_diesel(BNF.crop_year_anchor(date.today()))
+    return (BNF.auto_table(weekly, date.today()) if weekly else None), weekly, err
+
+
+def _bn_fsc_line(payload, auto):
+    """The monthly FSC as one subtle line: consecutive months with the same value and source are folded
+    (Jan–Mar 0.50); forecast, held-flat and overridden months are marked."""
     groups = []
-    for r in BNI.month_rows(payload):
-        v, held = r["fsc"], r["fsc_source"].startswith("held")
-        if groups and groups[-1][2] == v and groups[-1][3] == held:
+    for r in BNI.month_rows(payload, auto):
+        v = r["fsc"]
+        tag = {"forecast": "diesel held flat", "open": "month still open"}.get(r["fsc_kind"], "")
+        if r["fsc_source"].startswith("held"):
+            tag = "held flat"
+        elif r["fsc_source"] == "override":
+            tag = "override"
+        if groups and groups[-1][2] == v and groups[-1][3] == tag:
             groups[-1][1] = r["label"]
         else:
-            groups.append([r["label"], r["label"], v, held])
+            groups.append([r["label"], r["label"], v, tag])
     parts = []
-    for a, b, v, held in groups:
+    for a, b, v, tag in groups:
         span = a if a == b else a + "–" + b
-        parts.append("%s %.2f%s" % (span, v, " (held flat)" if held else "") if v is not None
+        parts.append("%s %.2f%s" % (span, v, f" ({tag})" if tag else "") if v is not None
                      else f"{span} not yet entered")
     return " · ".join(parts)
 
 
-def _bn_secondary_table(payload):
+def _bn_secondary_table(payload, auto):
     """The saved shuttle quotes laid out like the delivered-quotes board above it: the shuttle periods across,
     bid with the offer in blue beside it, the FSC as a quiet line underneath. Edited in BN freight inputs below."""
     st.markdown("### Secondary freight")
@@ -1136,11 +1158,12 @@ def _bn_secondary_table(payload):
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
     _table_actions(table_html, "bn_secondary_freight.png")
     st.markdown(f'<div class="legend">&#36;/car over the tariff, bid / offer; the bid is what the freight uses. '
-                f'FSC &#36;/mile: {_bn_fsc_line(payload)}. Update both in BN freight inputs at the bottom.</div>',
+                f'FSC &#36;/mile{" from EIA diesel" if auto and payload.get("fsc_mode", "formula") == "formula" else ""}: '
+                f'{_bn_fsc_line(payload, auto)}. Update both in BN freight inputs at the bottom.</div>',
                 unsafe_allow_html=True)
 
 
-def _bn_inputs_section(state):
+def _bn_inputs_section(state, auto, weekly, diesel_err):
     """Where Kolten feeds the secondary-market shuttle quotes and the monthly FSC (2026-10-28)."""
     payload, ver = state["payload"], state["ver"]
     st.markdown("### BN freight inputs")
@@ -1170,37 +1193,59 @@ def _bn_inputs_section(state):
                    "bid means no premium. Return Trip is for reference.")
     with st.container():
         st.markdown("**Fuel surcharge (FSC) by month**")
+        formula = st.radio("FSC source", ["Formula (EIA diesel)", "Typed values"], horizontal=True,
+                           index=0 if payload.get("fsc_mode", "formula") == "formula" else 1,
+                           key=f"bn_fscmode_{ver}").startswith("Formula")
+        if formula and auto:
+            last_d, last_v = weekly[-1]
+            st.caption("BN's surcharge follows diesel: 1¢/mile for every 5¢ that the monthly average of EIA's weekly US "
+                       "on-highway diesel, two months earlier, sits above \\$3.25. It reproduces every surcharge BN has "
+                       f"published (Aug .36, Sep .35, Oct .45, Nov .61). Latest diesel \\${last_v:.3f} ({last_d}); months "
+                       "past the data hold it flat. Type an override to replace the formula for a month.")
+        elif formula:
+            st.warning("Diesel prices aren't available, so the typed FSC (held flat) is used for now. "
+                       + ("Add EIA_API_KEY to the app's secrets to turn the formula on."
+                          if not BNF.available() else f"EIA couldn't be reached ({str(diesel_err)[:120]})."))
+        fld = "fsc_override" if formula else "fsc"
         by_key = {m["key"]: m for m in payload.get("months", [])}
-        mdf = pd.DataFrame([{"month": BNI.month_key(n).title(), "fsc": by_key.get(BNI.month_key(n), {}).get("fsc"),
+        mdf = pd.DataFrame([{"month": BNI.month_key(n).title(), "fsc": by_key.get(BNI.month_key(n), {}).get(fld),
                              "cars_override": by_key.get(BNI.month_key(n), {}).get("cars_override")}
                             for n in BNI.MONTH_ORDER]).astype({"fsc": float, "cars_override": float})
         edited_m = st.data_editor(
-            mdf, hide_index=True, disabled=["month"], width="stretch", key=f"bn_months_{ver}",
+            mdf, hide_index=True, disabled=["month"], width="stretch", key=f"bn_months_{ver}_{formula}",
             column_config={"month": st.column_config.TextColumn("Month"),
-                           "fsc": st.column_config.NumberColumn("FSC $/mile", format="%.2f"),
+                           "fsc": st.column_config.NumberColumn("Override $/mile" if formula else "FSC $/mile",
+                                                                format="%.2f"),
                            "cars_override": st.column_config.NumberColumn(
                                "Cars override $/car", format="%.0f",
                                help="Replaces the shuttle-derived premium for that month.")})
-        hold = st.checkbox("Hold the last FSC flat for months with none",
-                           value=payload.get("hold_fsc", True), key=f"bn_hold_{ver}",
-                           help="BN sets the surcharge month by month, so months past the last one you've entered "
-                                "stay steady at it until the next is entered. Off: a month with no FSC has no freight.")
-        st.caption("Leave a month blank to hold the latest FSC; type one to replace it, and every later blank month "
-                   "follows it.")
+        if formula:
+            hold = payload.get("hold_fsc", True)
+        else:
+            hold = st.checkbox("Hold the last FSC flat for months with none",
+                               value=payload.get("hold_fsc", True), key=f"bn_hold_{ver}",
+                               help="Months past the last one you've typed stay steady at it until the next is "
+                                    "typed. Off: a month with no FSC has no freight.")
+            st.caption("Leave a month blank to hold the latest FSC; type one to replace it, and every later blank "
+                       "month follows it.")
 
     new_payload = {
         "as_of": as_of.isoformat(),
+        "fsc_mode": "formula" if formula else "typed",
         "hold_fsc": hold,
         "quotes": [{"period": str(r.period).strip(), "bid": _num(r.bid), "offer": _num(r.offer)}
                    for r in edited_q.itertuples() if isinstance(r.period, str) and r.period.strip()],
-        "months": [{"key": str(r.month).lower(), "fsc": _num(r.fsc), "cars_override": _num(r.cars_override)}
+        "months": [{"key": str(r.month).lower(),
+                    "fsc": by_key.get(str(r.month).lower(), {}).get("fsc") if formula else _num(r.fsc),
+                    "fsc_override": _num(r.fsc) if formula else by_key.get(str(r.month).lower(), {}).get("fsc_override"),
+                    "cars_override": _num(r.cars_override)}
                    for r in edited_m.itertuples()],
     }
     st.markdown("**What the freight will use**")
     preview = pd.DataFrame([{"Month": r["label"], "FSC $/mile": r["fsc"], "FSC from": r["fsc_source"],
                              "BN Cars $/car (PNW)": r["cars"], "Hereford (÷ 2)": r["cars"] / 2,
                              "Cars from": r["cars_source"]}
-                            for r in BNI.month_rows(new_payload)])
+                            for r in BNI.month_rows(new_payload, auto)])
     st.dataframe(preview, hide_index=True, width="stretch",
                  column_config={"FSC $/mile": st.column_config.NumberColumn(format="%.2f"),
                                 "BN Cars $/car (PNW)": st.column_config.NumberColumn(format="%.0f"),
@@ -1297,7 +1342,8 @@ def _bn_tab(sel_date):
         st.info("Select at least one destination to filter on.")
         return
     inputs = _bn_inputs_state()
-    window = BNI.effective_window(inputs["payload"])
+    auto, weekly, diesel_err = _bn_auto_fsc()
+    window = BNI.effective_window(inputs["payload"], auto)
     rows = FD.load_bn(window)
     published_disp = "/".join(w["label"] for w in window) or "no months yet"
 
@@ -1311,7 +1357,7 @@ def _bn_tab(sel_date):
     st.markdown("### Rail FOB — BN")
     _raw_corridor_table([spec["market"] for _, spec in active], sel_date)
 
-    _bn_secondary_table(inputs["payload"])
+    _bn_secondary_table(inputs["payload"], auto)
 
     st.markdown("### FOB by Origin")
     if any(cells_by_dest.values()):
@@ -1385,7 +1431,7 @@ def _bn_tab(sel_date):
                    + ". BN Cars premium \\$/car (Hereford takes half): "
                    + " · ".join(f"{w['label']} {w['cars']:,.0f}" for w in window) + ".")
 
-    _bn_inputs_section(inputs)
+    _bn_inputs_section(inputs, auto, weekly, diesel_err)
 
 
 _CN_LETTER = {v: k[-1].upper() for k, v in FD.CN_RATE_FIELD.items()}
