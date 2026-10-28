@@ -921,7 +921,11 @@ def _ns_tab(sel_date):
     )
 
 
-_BN_TARGET_MONTHS = ("Aug", "Sep", "Oct", "Nov")
+# The tab's "big" periods are whatever the freight seed's rolling window currently
+# publishes (Oct / Nov / Dec / JFM as of 2026-10-28) — read from the seed, so a roll
+# needs no code change. Only these get the FH+LH / Split / OND bid inference below.
+_BN_TARGET_MONTHS = tuple(w["label"] for w in FD.load_bn_window())
+_BN_TARGET_BY_LOWER = {m.lower(): m for m in _BN_TARGET_MONTHS}
 
 
 def _bn_sibling_bid(cells, *labels):
@@ -936,18 +940,19 @@ def _bn_sibling_bid(cells, *labels):
 
 
 def _bn_infer_month_bid(cells, month):
-    """Best-effort bid for one of Aug/Sep/Oct/Nov when it wasn't posted as
-    its own literal period that day, from whatever partial pieces WERE
-    posted (Kolten's call, 2026-08-26 — only bother for these 4 "big"
-    months, not every smaller package). Display-only for FOB purposes —
-    never writes back to the archive, and the raw Rail FOB grid still shows
-    only what was literally posted. Tries, in order:
+    """Best-effort bid for one of the window's periods (_BN_TARGET_MONTHS)
+    when it wasn't posted as its own literal period that day, from whatever
+    partial pieces WERE posted (Kolten's call, 2026-08-26 — only bother for
+    the "big" periods, not every smaller package). Display-only for FOB
+    purposes — never writes back to the archive, and the raw Rail FOB grid
+    still shows only what was literally posted. Tries, in order:
       1. FH/LH <month> averaged (or whichever one exists, if only one does)
       2. Split <month>, treated the same as a literal posting
-      3. for Oct/Nov only: the OND package (Oct/Nov/Dec combined) — used
-         directly for Oct, or reverse-averaged against Oct for Nov
+      3. for Oct/Nov/Dec only: the OND package (Oct/Nov/Dec combined) — used
+         directly for Oct, or reverse-averaged against Oct for Nov and Dec
          (assuming OND = (Oct+Nov+Dec)/3 and Nov≈Dec) when Oct is otherwise
-         known; a straight OND substitution if Oct isn't known either."""
+         known; a straight OND substitution if Oct isn't known either.
+    JFM (a package already) gets steps 1-2 only, otherwise just what's posted."""
     direct = _bn_sibling_bid(cells, month)
     if direct is not None:
         return direct
@@ -962,7 +967,7 @@ def _bn_infer_month_bid(cells, month):
     split = _bn_sibling_bid(cells, f"Split {month}")
     if split is not None:
         return split
-    if month in ("Oct", "Nov"):
+    if month in ("Oct", "Nov", "Dec"):
         ond = _bn_sibling_bid(cells, "OND", "LH OND", "FH OND")
         if ond is not None:
             if month == "Oct":
@@ -976,15 +981,15 @@ def _bn_infer_month_bid(cells, month):
 
 def _bn_effective_bid(cells, period):
     """The literal bid if posted, else a best-effort inferred value — but
-    only for the 4 target months (Aug/Sep/Oct/Nov); every other period
-    (FH Sep, Split Nov, OND, JFM, ...) stays exactly as posted, blank if
+    only for the window's target periods (_BN_TARGET_MONTHS); every other
+    period (FH Dec, Split Nov, OND, ...) stays exactly as posted, blank if
     it wasn't."""
     direct = cells.get(period, {}).get("bid")
     if direct is not None:
         return direct
-    p = period.strip()
-    if p.title() in _BN_TARGET_MONTHS:
-        return _bn_infer_month_bid(cells, p.title())
+    target = _BN_TARGET_BY_LOWER.get(period.strip().lower())
+    if target:
+        return _bn_infer_month_bid(cells, target)
     return None
 
 
@@ -1031,9 +1036,7 @@ def _bn_tab(sel_date):
         st.info("Select at least one destination to filter on.")
         return
     rows = FD.load_bn()
-    published_months = sorted({m for r in rows for spec in FD.BN_DESTINATIONS.values()
-                                for m in r[spec["field"] + "_cpb"]}, key=FD.bn_month_sort_key)
-    published_disp = "/".join(m.upper() if m == "jj" else m.title() for m in published_months)
+    published_disp = "/".join(_BN_TARGET_MONTHS)
 
     cells_by_dest, eff_by_dest = {}, {}
     for dest, spec in active:
@@ -1095,20 +1098,46 @@ def _bn_tab(sel_date):
 
     st.markdown(
         '<div class="legend">FOB(origin) = bid at BN PNW/Hereford − rail freight (¢/bu = '
-        '$/car ÷ 4000 bu/car × 100). Unlike CSX/NS, BN publishes rates for a rolling ~4-month '
+        '&#36;/car ÷ 4000 bu/car × 100). Unlike CSX/NS, BN publishes rates for a rolling ~4-period '
         f'window rather than one flat number — currently <b>{published_disp}</b> — a period '
-        'nets against freight only when its first named month falls in that window; '
-        'everything else shows "—" until the workbook rolls forward (re-run the extraction '
-        'against a freshly saved copy to pick up the new months). For the Aug/Sep/Oct/Nov '
-        'columns specifically, a bid not posted that literal day is filled in best-effort '
-        'from whatever partial pieces WERE posted — FH+LH averaged, a Split-month quote used '
-        'directly, or (for Oct/Nov) the OND package, reverse-averaged against Oct when Oct is '
-        'known — before falling back to "—"; every other, smaller period (FH Sep, Split Nov, '
-        'OND itself, JFM, ...) is shown exactly as posted, no inference. All 11 BN origins are '
-        'shown (the workbook has no separate highlighted subset for this railroad). Blue = '
-        'the better destination for that origin/period.</div>',
+        'nets against freight only when its first named month falls in that window (JFM sits '
+        'in the January slot); everything else shows "—" until the window rolls forward. '
+        "Freight &#36;/car = face rate + lane miles × that period's fuel surcharge &#36;/mile + "
+        "the period's BN Cars premium (PNW takes all of it, Hereford half) — see the freight "
+        f'build below. For the {published_disp} columns specifically, a bid not posted that '
+        'literal day is filled in best-effort from whatever partial pieces WERE posted — FH+LH '
+        'averaged, a Split-month quote used directly, or (for Oct/Nov/Dec) the OND package, '
+        'reverse-averaged against Oct when Oct is known — before falling back to "—"; every '
+        'other, smaller period (FH Dec, Split Nov, OND itself, ...) is shown exactly as posted, '
+        f'no inference. All {len(rows)} BN origins are shown (the workbook has no separate '
+        'highlighted subset for this railroad). Blue = the better destination for that '
+        'origin/period.</div>',
         unsafe_allow_html=True,
     )
+
+    with st.expander("Freight build"):
+        window = FD.load_bn_window()
+        html = ['<table class="sheet"><tbody><tr>', '<th class="lblhdr">Origin</th>',
+                '<th>PNW rate</th>', '<th>PNW mi</th>', '<th>Herf rate</th>', '<th>Herf mi</th>']
+        html += [f'<th>PNW {w["label"]}<br><span class="fut-sub">¢/bu</span></th>' for w in window]
+        html += [f'<th>Herf {w["label"]}<br><span class="fut-sub">¢/bu</span></th>' for w in window]
+        html.append('</tr>')
+        for r in rows:
+            html.append(
+                f'<tr><td class="lbl">{r["origin"]}</td>'
+                f'<td>{r["pnw_rate"]:,.0f}</td><td>{r["pnw_miles"]:,.0f}</td>'
+                f'<td>{r["herf_rate"]:,.0f}</td><td>{r["herf_miles"]:,.0f}</td>'
+                + ''.join(f'<td>{r["pnw_cpb"][w["key"]]:.1f}</td>' for w in window)
+                + ''.join(f'<td>{r["hereford_cpb"][w["key"]]:.1f}</td>' for w in window)
+                + '</tr>')
+        html.append('</tbody></table>')
+        table_html = ''.join(html)
+        st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+        _table_actions(table_html, "bn_freight_build.png")
+        st.caption("Rates in \\$/car, then freight in ¢/bu. Fuel surcharge \\$/mile: "
+                   + " · ".join(f"{w['label']} {w['fsc_per_mile']:.2f}" for w in window)
+                   + ". BN Cars premium \\$/car (Hereford takes half): "
+                   + " · ".join(f"{w['label']} {w['cars']:,.0f}" for w in window) + ".")
 
 
 _CN_LETTER = {v: k[-1].upper() for k, v in FD.CN_RATE_FIELD.items()}

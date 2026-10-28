@@ -10,6 +10,18 @@ and the CSX / NS / BN / CN freight workbooks. `app.py` is the whole UI; `rail_da
   The repo's `.env` only holds the retired Postgres URLs, so a local run against Snowflake needs the `SNOWFLAKE_*` variables
   in the process environment first (never commit them). With neither set the app shows a notice and stops.
 
+## BN freight (re-seeded 2026-10-28)
+
+`bn_freight_seed.json` holds the freight **inputs** from Kolten's "Fob BN Corn Plus.xlsx" > "PNW Facing Corn Rates" tab (H16:Y100):
+per origin the PNW / Hereford face rate and lane miles, per period the fuel surcharge $/mile and the BN Cars premium $/car. `freight_data.load_bn()`
+builds the freight the way the sheet does — `rate + miles x FSC + cars`, Hereford taking cars / 2, / 4000 bu/car for cents — and ties to the sheet's totals to the
+penny (the seed's `source` field lists the cell addresses). The window (Oct / Nov / Dec / JFM as of 2026-10-28) rolls monthly: edit `window` (and any new rates)
+in the seed — `app.py`'s `_BN_TARGET_MONTHS`, the periods that get the FH/LH/Split/OND bid inference and the state-index columns, reads from it, so a roll needs no
+code change. A package slot (JFM) is keyed by its first month (`jan`), because a period nets against the freight for its first named month.
+The sheet's own Polo, IL PNW row (L49:N49) leaves the cars term out; the seed doesn't carry that — the old totals-based seed did, which had overstated Polo's PNW
+FOB (and the IL row of the state index) by 12.5 / 30 / 22.5 cents for Sep / Oct / Nov. Hereford's cars rule is always / 2 (as the sheet's formulas do); the sheet's H16 note
+describes a conditional rule (face value when under, premium when "big" under) that only matters if the premium goes negative.
+
 ## 💵 Net Carry tab (the last tab)
 
 The basis tracker's Net Carry tab for rail corridors: each posted delivery's basis re-expressed against ONE futures

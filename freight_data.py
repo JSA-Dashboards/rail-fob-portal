@@ -3,7 +3,8 @@ Static rail freight reference data — CSX + NS + BN origin spread tables.
 
 Seeded from Kolten's "Rail Spreads.xlsx"
 (`…\\Research Analyst\\Misc\\Rail Origins & Destinations\\`), CSX/NS/BN tabs,
-via one-off extractions (CSX+NS: 2026-08-21; BN: 2026-08-25).
+via one-off extractions (CSX+NS: 2026-08-21; BN: 2026-08-25, re-seeded from
+"Fob BN Corn Plus.xlsx" 2026-10-28).
 `csx_freight_seed.json` / `ns_freight_seed.json` / `bn_freight_seed.json` are
 committed snapshots — re-run the extraction and overwrite them if Kolten
 sends an updated workbook; this module doesn't touch the source file at
@@ -11,7 +12,9 @@ runtime.
 
 CSX/NS rows' `highlighted` flag comes straight from an "X"/"x" marker column
 Kolten added to the workbook itself — not a hardcoded shortlist. BN's sheet
-has no such marker (only 11 origins total, no separate curated subset).
+has no such marker (13 origins, no separate curated subset). BN's seed holds
+the freight INPUTS (face rate, miles, FSC $/mile and BN Cars $/car per
+period), not pasted totals — `load_bn()` rebuilds the totals.
 
 CSX rates are $/car at the workbook's stated 3500 bu/car. NS rates are
 already $/bu. BN rates are $/car at 4000 bu/car (confirmed by cross-checking
@@ -140,16 +143,31 @@ def load_ns():
     return rows
 
 
+def load_bn_window():
+    """The rolling ~4-period window the seed currently publishes, in order:
+    [{key, label, fsc_per_mile, cars}]. `key` is the calendar month a period
+    nets on (a package like JFM keys on its first month, 'jan'); `label` is
+    what the desk calls it (Oct / Nov / Dec / JFM)."""
+    return _load("bn_freight_seed.json")["window"]
+
+
 def load_bn():
-    """[{origin, state,
-         pnw: {<current ~4 months>: $/car},
-         hereford: {<current ~4 months>: $/car},
-         pnw_cpb: {...same keys...: ¢/bu},
-         hereford_cpb: {...same keys...: ¢/bu}}]
-    The month keys are whatever's currently published — re-run the
-    extraction against a freshly saved workbook to roll them forward."""
-    rows = _load("bn_freight_seed.json")
+    """[{origin, state, pnw_rate, pnw_miles, herf_rate, herf_miles,
+         pnw: {<window key>: $/car}, hereford: {<window key>: $/car},
+         pnw_cpb: {...: ¢/bu}, hereford_cpb: {...: ¢/bu}}]
+    Freight is built the way the workbook builds it (Kolten's "PNW Facing Corn
+    Rates" tab, 2026-10-28): face rate + lane miles x that period's fuel
+    surcharge $/mile + the period's BN Cars (secondary-market) premium in
+    $/car — PNW takes all of it, Hereford half. The window and its FSC/cars
+    inputs are in bn_freight_seed.json; roll them forward there."""
+    seed = _load("bn_freight_seed.json")
+    window = seed["window"]
+    rows = seed["origins"]
     for r in rows:
+        r["pnw"] = {w["key"]: r["pnw_rate"] + r["pnw_miles"] * w["fsc_per_mile"] + w["cars"]
+                    for w in window}
+        r["hereford"] = {w["key"]: r["herf_rate"] + r["herf_miles"] * w["fsc_per_mile"] + w["cars"] / 2
+                         for w in window}
         for f in ("pnw", "hereford"):
             r[f"{f}_cpb"] = {m: v / BN_BU_PER_CAR * 100 for m, v in r[f].items()}
     return rows
