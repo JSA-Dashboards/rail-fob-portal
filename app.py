@@ -13,6 +13,7 @@ Three top-level tabs keep the raw bid boards separate from the CSX/NS origin
 economics, instead of one long mixed scroll.
 """
 import base64
+import hashlib
 import json
 import os
 import re
@@ -27,6 +28,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+import bn_inputs as BNI
 import freight_data as FD
 import rail_data as RD
 import river_data as RVD
@@ -921,10 +923,10 @@ def _ns_tab(sel_date):
     )
 
 
-# The tab's "big" periods are whatever the freight seed's rolling window currently
-# publishes (Oct / Nov / Dec / JFM as of 2026-10-28) — read from the seed, so a roll
-# needs no code change. Only these get the FH+LH / Split / OND bid inference below.
-_BN_TARGET_MONTHS = tuple(w["label"] for w in FD.load_bn_window())
+# The tab's "big" bid periods (Oct / Nov / Dec / JFM as of 2026-10-28) come from the
+# freight seed's `index_periods`, so a roll needs no code change. Only these get the
+# FH+LH / Split / OND bid inference below and a column in the FOB Index by State.
+_BN_TARGET_MONTHS = tuple(FD.load_bn_index_periods())
 _BN_TARGET_BY_LOWER = {m.lower(): m for m in _BN_TARGET_MONTHS}
 
 
@@ -1025,6 +1027,130 @@ def _bn_state_best_row(origins, cells, field, periods):
     return out
 
 
+@st.cache_data(ttl=60)
+def _bn_saved_inputs():
+    """(latest saved inputs row | None, error text | None)."""
+    try:
+        return BNI.fetch_latest(), None
+    except Exception as e:
+        return None, str(e)
+
+
+def _bn_inputs_state():
+    """The inputs the tab runs on: this session's applied edit (only when a save wasn't
+    possible), else the latest saved in Snowflake, else the seed's defaults."""
+    saved, err = _bn_saved_inputs()
+    session = st.session_state.get("bn_inputs_session")
+    if session:
+        payload, source = session, "Showing values applied for this session only — they are not saved."
+    elif saved:
+        payload = saved["payload"]
+        source = f"Saved in Snowflake {str(saved['saved_at'])[:16]} UTC."
+    else:
+        payload = BNI.default_payload()
+        if err:
+            source = "Using the built-in defaults (the 2026-10-28 sheet) — the saved inputs couldn't be read."
+        elif BNI.sf_available():
+            source = "Using the built-in defaults (the 2026-10-28 sheet) — nothing saved yet."
+        else:
+            source = ("Using the built-in defaults (the 2026-10-28 sheet) — this isn't running against "
+                      "Snowflake, so an edit holds for this session only.")
+    ver = hashlib.md5(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:8]
+    return {"payload": payload, "source": source, "ver": ver, "error": err, "session": bool(session)}
+
+
+def _num(x):
+    return None if x is None or pd.isna(x) else float(x)
+
+
+def _bn_save(payload):
+    try:
+        if BNI.sf_available():
+            BNI.save(payload)
+            st.session_state.pop("bn_inputs_session", None)
+            _bn_saved_inputs.clear()
+            st.session_state["bn_save_msg"] = ("ok", "Saved. The freight above now uses these.")
+        else:
+            st.session_state["bn_inputs_session"] = payload
+            st.session_state["bn_save_msg"] = ("warn", "Applied for this session only — this isn't running "
+                                                       "against Snowflake, so nothing was saved.")
+    except Exception as e:
+        st.session_state["bn_inputs_session"] = payload
+        st.session_state["bn_save_msg"] = ("warn", f"Couldn't save to Snowflake ({str(e)[:200]}), so these apply "
+                                                   "for this session only. If the table is missing, run "
+                                                   "bn_inputs_setup.sql there.")
+    st.rerun()
+
+
+def _bn_inputs_section(state):
+    """Where Kolten feeds the secondary-market shuttle quotes and the monthly FSC (2026-10-28)."""
+    payload, ver = state["payload"], state["ver"]
+    st.markdown("### BN freight inputs")
+    st.caption("Feed these when the secondary market or the fuel surcharge moves; the freight above rebuilds "
+               "from them on Save. " + state["source"])
+    msg = st.session_state.pop("bn_save_msg", None)
+    if msg:
+        (st.success if msg[0] == "ok" else st.warning)(msg[1])
+    if state["error"]:
+        st.warning(f"Couldn't read the saved inputs ({state['error'][:160]}). If the table doesn't exist yet, "
+                   "run bn_inputs_setup.sql in Snowflake.")
+
+    with st.container():
+        st.markdown("**Secondary freight — BN 110-car shuttles**")
+        as_of = st.date_input("As of", value=pd.to_datetime(payload.get("as_of") or date.today()).date(),
+                               key=f"bn_asof_{ver}")
+        qdf = pd.DataFrame(payload.get("quotes", []), columns=["period", "bid", "offer"]).astype(
+            {"bid": float, "offer": float})
+        edited_q = st.data_editor(
+            qdf, num_rows="dynamic", hide_index=True, width="stretch", key=f"bn_quotes_{ver}",
+            column_config={"period": st.column_config.TextColumn("Period", help="As quoted: F/H November, "
+                                                                                 "December, Jan, Feb, Mar 2027, ..."),
+                           "bid": st.column_config.NumberColumn("Bid $/car", format="%.0f"),
+                           "offer": st.column_config.NumberColumn("Offer $/car", format="%.0f")})
+        st.caption("\\$/car over the tariff. The freight uses the BID: a month takes its own full-month quote, "
+                   "else the midpoint of its F/H and L/H bids, else the narrowest package covering it; a blank "
+                   "bid means no premium. Return Trip is for reference.")
+    with st.container():
+        st.markdown("**Fuel surcharge (FSC) by month**")
+        by_key = {m["key"]: m for m in payload.get("months", [])}
+        mdf = pd.DataFrame([{"month": BNI.month_key(n).title(), "fsc": by_key.get(BNI.month_key(n), {}).get("fsc"),
+                             "cars_override": by_key.get(BNI.month_key(n), {}).get("cars_override")}
+                            for n in BNI.MONTH_ORDER]).astype({"fsc": float, "cars_override": float})
+        edited_m = st.data_editor(
+            mdf, hide_index=True, disabled=["month"], width="stretch", key=f"bn_months_{ver}",
+            column_config={"month": st.column_config.TextColumn("Month"),
+                           "fsc": st.column_config.NumberColumn("FSC $/mile", format="%.2f"),
+                           "cars_override": st.column_config.NumberColumn(
+                               "Cars override $/car", format="%.0f",
+                               help="Replaces the shuttle-derived premium for that month.")})
+        st.caption("A month with no FSC has no freight yet, so its bids show — until one is entered.")
+
+    new_payload = {
+        "as_of": as_of.isoformat(),
+        "quotes": [{"period": str(r.period).strip(), "bid": _num(r.bid), "offer": _num(r.offer)}
+                   for r in edited_q.itertuples() if isinstance(r.period, str) and r.period.strip()],
+        "months": [{"key": str(r.month).lower(), "fsc": _num(r.fsc), "cars_override": _num(r.cars_override)}
+                   for r in edited_m.itertuples()],
+    }
+    st.markdown("**What the freight will use**")
+    preview = pd.DataFrame([{"Month": r["label"], "FSC $/mile": r["fsc"], "BN Cars $/car (PNW)": r["cars"],
+                             "Hereford (÷ 2)": r["cars"] / 2, "From": r["cars_source"]}
+                            for r in BNI.month_rows(new_payload)])
+    st.dataframe(preview, hide_index=True, width="stretch",
+                 column_config={"FSC $/mile": st.column_config.NumberColumn(format="%.2f"),
+                                "BN Cars $/car (PNW)": st.column_config.NumberColumn(format="%.0f"),
+                                "Hereford (÷ 2)": st.column_config.NumberColumn(format="%.1f")})
+    for p in BNI.problems(new_payload):
+        st.warning(p)
+
+    b1, b2, _ = st.columns([1, 1, 4])
+    if b1.button("Save inputs", type="primary", key=f"bn_save_{ver}"):
+        _bn_save(new_payload)
+    if state["session"] and b2.button("Use saved values", key=f"bn_discard_{ver}"):
+        st.session_state.pop("bn_inputs_session", None)
+        st.rerun()
+
+
 def _bn_tab(sel_date):
     st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab.")
     fc, fe = st.columns(2)
@@ -1035,8 +1161,10 @@ def _bn_tab(sel_date):
     if not active:
         st.info("Select at least one destination to filter on.")
         return
-    rows = FD.load_bn()
-    published_disp = "/".join(_BN_TARGET_MONTHS)
+    inputs = _bn_inputs_state()
+    window = BNI.effective_window(inputs["payload"])
+    rows = FD.load_bn(window)
+    published_disp = "/".join(w["label"] for w in window) or "no months yet"
 
     cells_by_dest, eff_by_dest = {}, {}
     for dest, spec in active:
@@ -1047,6 +1175,8 @@ def _bn_tab(sel_date):
 
     st.markdown("### Rail FOB — BN")
     _raw_corridor_table([spec["market"] for _, spec in active], sel_date)
+
+    _bn_inputs_section(inputs)
 
     st.markdown("### FOB Index by State")
     index_periods = list(_BN_TARGET_MONTHS)
@@ -1098,13 +1228,14 @@ def _bn_tab(sel_date):
 
     st.markdown(
         '<div class="legend">FOB(origin) = bid at BN PNW/Hereford − rail freight (¢/bu = '
-        '&#36;/car ÷ 4000 bu/car × 100). Unlike CSX/NS, BN publishes rates for a rolling ~4-period '
-        f'window rather than one flat number — currently <b>{published_disp}</b> — a period '
-        'nets against freight only when its first named month falls in that window (JFM sits '
-        'in the January slot); everything else shows "—" until the window rolls forward. '
-        "Freight &#36;/car = face rate + lane miles × that period's fuel surcharge &#36;/mile + "
-        "the period's BN Cars premium (PNW takes all of it, Hereford half) — see the freight "
-        f'build below. For the {published_disp} columns specifically, a bid not posted that '
+        '&#36;/car ÷ 4000 bu/car × 100). Unlike CSX/NS, BN publishes rates by month rather than '
+        f'one flat number — currently <b>{published_disp}</b> — a period nets against freight '
+        'only when its first named month has one (a package like JFM nets on its first month, '
+        'Jan); everything else shows "—" until that month has an FSC entered below. '
+        "Freight &#36;/car = face rate + lane miles × that month's fuel surcharge &#36;/mile + "
+        "that month's BN Cars premium (the secondary-market shuttle bid; PNW takes all of it, "
+        "Hereford half) — see the freight build and the BN freight inputs below. "
+        f'For the {" / ".join(_BN_TARGET_MONTHS)} columns specifically, a bid not posted that '
         'literal day is filled in best-effort from whatever partial pieces WERE posted — FH+LH '
         'averaged, a Split-month quote used directly, or (for Oct/Nov/Dec) the OND package, '
         'reverse-averaged against Oct when Oct is known — before falling back to "—"; every '
@@ -1116,7 +1247,6 @@ def _bn_tab(sel_date):
     )
 
     with st.expander("Freight build"):
-        window = FD.load_bn_window()
         html = ['<table class="sheet"><tbody><tr>', '<th class="lblhdr">Origin</th>',
                 '<th>PNW rate</th>', '<th>PNW mi</th>', '<th>Herf rate</th>', '<th>Herf mi</th>']
         html += [f'<th>PNW {w["label"]}<br><span class="fut-sub">¢/bu</span></th>' for w in window]

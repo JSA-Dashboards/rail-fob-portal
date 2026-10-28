@@ -143,26 +143,28 @@ def load_ns():
     return rows
 
 
-def load_bn_window():
-    """The rolling ~4-period window the seed currently publishes, in order:
-    [{key, label, fsc_per_mile, cars}]. `key` is the calendar month a period
-    nets on (a package like JFM keys on its first month, 'jan'); `label` is
-    what the desk calls it (Oct / Nov / Dec / JFM)."""
-    return _load("bn_freight_seed.json")["window"]
+def load_bn_seed():
+    """The raw BN seed: {source, index_periods, defaults, origins}. `defaults` are the
+    shuttle quotes and monthly FSC used until inputs are saved (see bn_inputs.py)."""
+    return _load("bn_freight_seed.json")
 
 
-def load_bn():
+def load_bn_index_periods():
+    """The bid periods the BN tab's FOB Index by State shows, and the ones that get
+    FH/LH/Split/OND bid inference: Oct / Nov / Dec / JFM as of 2026-10-28."""
+    return load_bn_seed()["index_periods"]
+
+
+def load_bn(window):
     """[{origin, state, pnw_rate, pnw_miles, herf_rate, herf_miles,
-         pnw: {<window key>: $/car}, hereford: {<window key>: $/car},
+         pnw: {<month key>: $/car}, hereford: {<month key>: $/car},
          pnw_cpb: {...: ¢/bu}, hereford_cpb: {...: ¢/bu}}]
-    Freight is built the way the workbook builds it (Kolten's "PNW Facing Corn
-    Rates" tab, 2026-10-28): face rate + lane miles x that period's fuel
-    surcharge $/mile + the period's BN Cars (secondary-market) premium in
-    $/car — PNW takes all of it, Hereford half. The window and its FSC/cars
-    inputs are in bn_freight_seed.json; roll them forward there."""
-    seed = _load("bn_freight_seed.json")
-    window = seed["window"]
-    rows = seed["origins"]
+    window = [{key, fsc_per_mile, cars}] — one entry per month with an FSC
+    (bn_inputs.effective_window). Freight is built the way the workbook builds
+    it (Kolten's "PNW Facing Corn Rates" tab, 2026-10-28): face rate + lane
+    miles x that month's fuel surcharge $/mile + the month's BN Cars
+    (secondary-market) premium in $/car — PNW takes all of it, Hereford half."""
+    rows = load_bn_seed()["origins"]
     for r in rows:
         r["pnw"] = {w["key"]: r["pnw_rate"] + r["pnw_miles"] * w["fsc_per_mile"] + w["cars"]
                     for w in window}

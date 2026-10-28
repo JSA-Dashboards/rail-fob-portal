@@ -1,31 +1,123 @@
 {
-  "source": "Fob BN Corn Plus.xlsx > 'PNW Facing Corn Rates' (H16:Y100), extracted 2026-10-28. origins: J22:N34 (PWN Rate K, Herf Rate L, PNW miles M, Herf miles N); window: labels P19:S19, FSC $/mile P20:S20, BN Cars $/car P18:S18. Freight $/car = rate + miles x FSC + cars (Hereford takes cars / 2). The tab's 4th slot is the JFM package, keyed 'jan' because periods net on their first named month.",
-  "window": [
-    {
-      "key": "oct",
-      "label": "Oct",
-      "fsc_per_mile": 0.45,
-      "cars": 0
-    },
-    {
-      "key": "nov",
-      "label": "Nov",
-      "fsc_per_mile": 0.61,
-      "cars": 0
-    },
-    {
-      "key": "dec",
-      "label": "Dec",
-      "fsc_per_mile": 0.55,
-      "cars": 50
-    },
-    {
-      "key": "jan",
-      "label": "JFM",
-      "fsc_per_mile": 0.5,
-      "cars": 600
-    }
+  "source": "Origins: Fob BN Corn Plus.xlsx > 'PNW Facing Corn Rates' (H16:Y100), extracted 2026-10-28 \u2014 J22:N34 (PWN Rate K, Herf Rate L, PNW miles M, Herf miles N). Freight $/car = rate + miles x FSC + BN Cars (Hereford takes cars / 2). 'defaults' is what the tab uses until inputs are saved in Snowflake (bn_inputs.py): the BN 110-car shuttle sheet of 2026-10-28 (the BID is the BN Cars premium) and the FSC $/mile by month (Jan-Mar = the workbook's JFM .50; Apr-Sep not entered yet, so no freight for them).",
+  "index_periods": [
+    "Oct",
+    "Nov",
+    "Dec",
+    "JFM"
   ],
+  "defaults": {
+    "as_of": "2026-10-28",
+    "quotes": [
+      {
+        "period": "Return Trip",
+        "bid": 0,
+        "offer": null
+      },
+      {
+        "period": "F/H November",
+        "bid": null,
+        "offer": 100
+      },
+      {
+        "period": "L/H November",
+        "bid": null,
+        "offer": 50
+      },
+      {
+        "period": "F/H December",
+        "bid": 25,
+        "offer": 100
+      },
+      {
+        "period": "December",
+        "bid": 0,
+        "offer": 100
+      },
+      {
+        "period": "Jan, Feb, Mar 2027",
+        "bid": 450,
+        "offer": 700
+      },
+      {
+        "period": "April May 2027",
+        "bid": 100,
+        "offer": 400
+      },
+      {
+        "period": "April - July",
+        "bid": 100,
+        "offer": 300
+      },
+      {
+        "period": "April - September 2027",
+        "bid": 0,
+        "offer": 250
+      }
+    ],
+    "months": [
+      {
+        "key": "oct",
+        "fsc": 0.45,
+        "cars_override": null
+      },
+      {
+        "key": "nov",
+        "fsc": 0.61,
+        "cars_override": null
+      },
+      {
+        "key": "dec",
+        "fsc": 0.55,
+        "cars_override": null
+      },
+      {
+        "key": "jan",
+        "fsc": 0.5,
+        "cars_override": null
+      },
+      {
+        "key": "feb",
+        "fsc": 0.5,
+        "cars_override": null
+      },
+      {
+        "key": "mar",
+        "fsc": 0.5,
+        "cars_override": null
+      },
+      {
+        "key": "apr",
+        "fsc": null,
+        "cars_override": null
+      },
+      {
+        "key": "may",
+        "fsc": null,
+        "cars_override": null
+      },
+      {
+        "key": "jun",
+        "fsc": null,
+        "cars_override": null
+      },
+      {
+        "key": "jul",
+        "fsc": null,
+        "cars_override": null
+      },
+      {
+        "key": "aug",
+        "fsc": null,
+        "cars_override": null
+      },
+      {
+        "key": "sep",
+        "fsc": null,
+        "cars_override": null
+      }
+    ]
+  },
   "origins": [
     {
       "origin": "Breckenridge, MN",

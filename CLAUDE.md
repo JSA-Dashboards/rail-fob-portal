@@ -10,17 +10,25 @@ and the CSX / NS / BN / CN freight workbooks. `app.py` is the whole UI; `rail_da
   The repo's `.env` only holds the retired Postgres URLs, so a local run against Snowflake needs the `SNOWFLAKE_*` variables
   in the process environment first (never commit them). With neither set the app shows a notice and stops.
 
-## BN freight (re-seeded 2026-10-28)
+## BN freight (re-seeded 2026-10-28; inputs fed in the app since the same day)
 
-`bn_freight_seed.json` holds the freight **inputs** from Kolten's "Fob BN Corn Plus.xlsx" > "PNW Facing Corn Rates" tab (H16:Y100):
-per origin the PNW / Hereford face rate and lane miles, per period the fuel surcharge $/mile and the BN Cars premium $/car. `freight_data.load_bn()`
-builds the freight the way the sheet does — `rate + miles x FSC + cars`, Hereford taking cars / 2, / 4000 bu/car for cents — and ties to the sheet's totals to the
-penny (the seed's `source` field lists the cell addresses). The window (Oct / Nov / Dec / JFM as of 2026-10-28) rolls monthly: edit `window` (and any new rates)
-in the seed — `app.py`'s `_BN_TARGET_MONTHS`, the periods that get the FH/LH/Split/OND bid inference and the state-index columns, reads from it, so a roll needs no
-code change. A package slot (JFM) is keyed by its first month (`jan`), because a period nets against the freight for its first named month.
-The sheet's own Polo, IL PNW row (L49:N49) leaves the cars term out; the seed doesn't carry that — the old totals-based seed did, which had overstated Polo's PNW
-FOB (and the IL row of the state index) by 12.5 / 30 / 22.5 cents for Sep / Oct / Nov. Hereford's cars rule is always / 2 (as the sheet's formulas do); the sheet's H16 note
-describes a conditional rule (face value when under, premium when "big" under) that only matters if the premium goes negative.
+Freight is built the way Kolten's "Fob BN Corn Plus.xlsx" > "PNW Facing Corn Rates" tab (H16:Y100) builds it: `rate + miles x FSC + BN Cars`, Hereford
+taking cars / 2, / 4000 bu/car for cents. `bn_freight_seed.json` holds the per-origin face rates and lane miles (13 origins; `source` lists the sheet's cells), the
+`index_periods` the tab shows in the FOB Index by State and runs bid inference on (Oct / Nov / Dec / JFM — `app.py`'s `_BN_TARGET_MONTHS` reads them, no code change
+on a roll), and `defaults`: the inputs used until something is saved. The two inputs that move are **fed on the BN tab** (the "BN freight inputs" section, right under the delivered PNW / Hereford quotes: shuttle table, then FSC):
+the secondary-market **BN 110-car shuttle quotes** (bid / offer by shuttle period, the daily sheet Kolten gets) and the **FSC $/mile by month** (a 12-row Oct..Sep grid,
+plus an optional per-month cars override). A month with no FSC has no freight, so its bids show "—" until one is entered — that is how more months get added.
+
+`bn_inputs.py` (pure + the Snowflake IO; `tests/test_bn_inputs.py`): the BID is the premium; a month takes its own full-month quote, else the midpoint of its F/H and L/H
+bids (lone half if only one), else the NARROWEST package covering it (Jan-Feb-Mar, April-May, April-July, ...); a quote with no bid ('-') doesn't count, so the month falls
+through to a package or 0. Saves append one JSON row to `JSA.RAIL_FOB.BN_FREIGHT_INPUTS` (`bn_inputs_setup.sql` creates it — run once as ACCOUNTADMIN; its two GRANT lines are only for a portal role other than ACCOUNTADMIN; append-only, so a
+save is a single INSERT with no DELETE-then-INSERT race, every change stays as history, `SYSDATE()` keeps it UTC); the tab reads the latest row (cached 60 s). Not on Snowflake, or the table
+missing / unreadable: the tab runs on the seed's defaults, says so, and a Save holds for the session only ("Use saved values" drops it).
+
+Packages net on their FIRST named month (JFM -> Jan), so the grid's Feb/Mar only matter for periods that start there. The sheet's own Polo, IL PNW row (L49:N49) leaves the cars term
+out; the seed doesn't carry that (the old totals-based seed did, which overstated Polo's PNW FOB and the IL row of the state index by 12.5 / 30 / 22.5 cents for Sep / Oct / Nov).
+Hereford's cars rule is always / 2, as the sheet's formulas do; the sheet's H16 note (face value when under, premium when "big" under) only matters if a premium goes negative.
+To roll the index columns (e.g. add AM / AMJJ once April has an FSC), edit `index_periods` in the seed.
 
 ## 💵 Net Carry tab (the last tab)
 
