@@ -157,6 +157,19 @@ _TABLE_CSS = f"""
   table.sheet td.up {{ background: #e8f5e9; color: #1f2328; font-weight: 700; }}
   table.sheet td.down {{ background: #ffebee; color: #1f2328; font-weight: 700; }}
   table.sheet td.better {{ background: #eaf4fc; color: {JPSI_DARK}; font-weight: 700; }}
+  table.sheet th.title {{ font-size: 1.15rem; color: {JPSI_DARK}; text-align: left; text-transform: none;
+    letter-spacing: 0; vertical-align: middle; padding-right: 18px; }}
+  table.sheet th.grp {{ text-align: center; font-size: .82rem; color: {JPSI_DARK}; text-decoration: underline;
+    text-transform: none; letter-spacing: 0; border-bottom: 1px solid #e2e8f0; }}
+  table.sheet th.sub {{ text-align: center; color: {JPSI_DARK}; text-transform: none; letter-spacing: 0; font-size: .74rem; }}
+  table.sheet .gl {{ border-left: 2px solid #e2e8f0; }}
+  table.sheet td.bidrow {{ background: #fff9c4; text-align: center; font-weight: 600; color: {JPSI_DARK}; }}
+  table.sheet tr.carsrow td {{ text-align: center; font-weight: 600; color: {JPSI_DARK};
+    border-top: 1px solid #94a3b8; border-bottom: 1px solid #94a3b8; }}
+  table.sheet tr.carsrow td.lbl {{ text-align: left; }}
+  table.sheet td.fobv {{ text-align: center; }}
+  table.sheet td.fobv.neg {{ color: #c00000; }}
+  table.sheet td.fobv.divide {{ background: #fbe5d6; }}
   table.sheet td.pending {{ color: #94a3b8; }}
   table.sheet .off {{ color: {JPSI_BLUE}; font-weight: 600; }}
   .fut-sub {{ font-size: 0.68rem; color: #9aa5b1; font-weight: 400; }}
@@ -1008,25 +1021,6 @@ def _bn_variant_row(cells, month_rates_cpb, periods):
     return row
 
 
-def _bn_state_best_row(origins, cells, field, periods):
-    out = []
-    for p in periods:
-        bid = _bn_effective_bid(cells, p)
-        if bid is None:
-            out.append(None)
-            continue
-        best = None
-        for o in origins:
-            frt = FD.bn_freight_cpb(o[field], p)
-            if frt is None:
-                continue
-            v = bid - frt
-            if best is None or v > best:
-                best = v
-        out.append(best)
-    return out
-
-
 @st.cache_data(ttl=60)
 def _bn_saved_inputs():
     """(latest saved inputs row | None, error text | None)."""
@@ -1080,6 +1074,48 @@ def _bn_save(payload):
                                                    "for this session only. If the table is missing, run "
                                                    "bn_inputs_setup.sql there.")
     st.rerun()
+
+
+def _bn_fsc_line(payload):
+    """The monthly FSC as one subtle line: consecutive months with the same value are folded
+    (Jan–Mar 0.50) and months with none are called out as not yet entered."""
+    by_key = {m["key"]: m.get("fsc") for m in payload.get("months", [])}
+    groups = []
+    for n in BNI.MONTH_ORDER:
+        label, v = BNI.month_key(n).title(), by_key.get(BNI.month_key(n))
+        if groups and groups[-1][2] == v:
+            groups[-1][1] = label
+        else:
+            groups.append([label, label, v])
+    parts = []
+    for a, b, v in groups:
+        span = a if a == b else a + "–" + b
+        parts.append(f"{span} {v:.2f}" if v is not None else f"{span} not yet entered")
+    return " · ".join(parts)
+
+
+def _bn_secondary_table(payload):
+    """The saved shuttle quotes as a sheet like the desk's bids / offers (Period, Bid, Offer), with
+    the FSC as a quiet line underneath. Edited in the BN freight inputs section at the bottom."""
+    st.markdown("### Secondary freight")
+    try:
+        asof = f"{date.fromisoformat(payload['as_of']):%b %d}".replace(" 0", " ")
+    except (KeyError, TypeError, ValueError):
+        asof = payload.get("as_of") or ""
+    fmt = lambda v: f"{v:,.0f}" if v is not None else "–"
+    html = ['<table class="sheet"><tbody>',
+            f'<tr class="section"><td colspan="3">BN 110-car shuttles{" · as of " + asof if asof else ""}</td></tr>',
+            '<tr><th class="lblhdr">Period</th><th>Bid</th><th>Offer</th></tr>']
+    for q in payload.get("quotes", []):
+        html.append(f'<tr><td class="lbl">{_esc(str(q["period"]))}</td>'
+                    f'<td>{fmt(q.get("bid"))}</td><td>{fmt(q.get("offer"))}</td></tr>')
+    html.append('</tbody></table>')
+    table_html = ''.join(html)
+    st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+    _table_actions(table_html, "bn_secondary_freight.png")
+    st.markdown(f'<div class="legend">&#36;/car over the tariff, bid is what the freight uses. '
+                f'FSC &#36;/mile: {_bn_fsc_line(payload)}. Update both in BN freight inputs at the bottom.</div>',
+                unsafe_allow_html=True)
 
 
 def _bn_inputs_section(state):
@@ -1151,6 +1187,71 @@ def _bn_inputs_section(state):
         st.rerun()
 
 
+def _bn_fob_cell(v):
+    """Accountant style, as on Kolten's sheet: negatives in parentheses (red), no plus sign."""
+    if v is None:
+        return "—", ""
+    return (f"({abs(v):.1f})", " neg") if v < 0 else (f"{v:.1f}", "")
+
+
+def _bn_fob_by_origin(rows, active, cells_by_dest, window):
+    """FOB (¢/bu) per origin, PNW | Hereford side by side under each of the headline periods, in the layout of
+    Kolten's "FOB BN" sheet (2026-10-28): the bid in a yellow row, the BN Car Val / FSC per Mi row, and the
+    better destination for each origin shaded (the geographical PNW-Hereford divide)."""
+    periods = list(_BN_TARGET_MONTHS)
+    n = len(active)
+    by_key = {w["key"]: w for w in window}
+
+    def month_win(p):
+        m = FD.bn_period_first_month(p)
+        return by_key.get(FD._BN_MONTH3_REV[m]) if m else None
+
+    def gl(i):
+        return " gl" if i == 0 else ""
+
+    def bid_txt(v):
+        return "—" if v is None else (f"{v:+.0f}" if float(v).is_integer() else f"{v:+.1f}")
+
+    html = ['<table class="sheet"><tbody>',
+            '<tr><th class="title" rowspan="3">FOB BN</th>'
+            + ''.join(f'<th class="grp gl" colspan="{n}">{p}</th>' for p in periods) + '</tr>',
+            '<tr>' + ''.join(f'<th class="sub{gl(i)}">{dest}</th>'
+                             for _ in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
+            '<tr>' + ''.join(f'<td class="bidrow{gl(i)}">{bid_txt(_bn_effective_bid(cells_by_dest[dest], p))}</td>'
+                             for p in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
+            '<tr class="carsrow"><td class="lbl">BN Car Val / FSC per Mi</td>']
+    for p in periods:
+        w = month_win(p)
+        cars = "—" if w is None else f"{w['cars']:,.0f}"
+        fsc = "—" if w is None else f"{w['fsc_per_mile']:.2f}"
+        cells = [cars, fsc] if n == 2 else [f"{cars} / {fsc}"]
+        html.append(''.join(f'<td class="gl">{c}</td>' if i == 0 else f'<td>{c}</td>' for i, c in enumerate(cells)))
+    html.append('</tr>')
+    for r in rows:
+        grid = []
+        for p in periods:
+            vals = []
+            for dest, spec in active:
+                bid = _bn_effective_bid(cells_by_dest[dest], p)
+                frt = FD.bn_freight_cpb(r[spec["field"] + "_cpb"], p)
+                vals.append(None if bid is None or frt is None else bid - frt)
+            best = max(range(n), key=lambda i: vals[i]) if sum(v is not None for v in vals) == 2 else None
+            for i, v in enumerate(vals):
+                txt, neg = _bn_fob_cell(v)
+                grid.append(f'<td class="fobv{neg}{" divide" if i == best else ""}{gl(i)}">{txt}</td>')
+        html.append(f'<tr><td class="lbl">{r["origin"]}</td>' + ''.join(grid) + '</tr>')
+    html.append('</tbody></table>')
+    table_html = ''.join(html)
+    st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+    _table_actions(table_html, "bn_fob_by_origin.png")
+    st.markdown(
+        '<div class="legend">¢/bu, bid − freight: negatives in parentheses. The yellow row is the bid used (FH+LH '
+        "averaged, a Split month or the OND package filled in where that period wasn't posted). BN Car Val is the "
+        'secondary-market shuttle bid in &#36;/car (Hereford takes half) and FSC is &#36;/mile, both from the inputs '
+        'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide).</div>',
+        unsafe_allow_html=True)
+
+
 def _bn_tab(sel_date):
     st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab.")
     fc, fe = st.columns(2)
@@ -1176,34 +1277,13 @@ def _bn_tab(sel_date):
     st.markdown("### Rail FOB — BN")
     _raw_corridor_table([spec["market"] for _, spec in active], sel_date)
 
-    _bn_inputs_section(inputs)
+    _bn_secondary_table(inputs["payload"])
 
-    st.markdown("### FOB Index by State")
-    index_periods = list(_BN_TARGET_MONTHS)
+    st.markdown("### FOB by Origin")
     if any(cells_by_dest.values()):
-        by_state = {}
-        for r in rows:
-            by_state.setdefault(r["state"], []).append(r)
-        ncols = 1 + len(index_periods)
-        html = ['<table class="sheet"><tbody><tr>', '<th class="lblhdr">State</th>']
-        html += [f'<th>{p}</th>' for p in index_periods]
-        html.append('</tr>')
-        for s in sorted(by_state):
-            origins = by_state[s]
-            label_rows = [(dest, _bn_state_best_row(origins, cells_by_dest[dest], spec["field"] + "_cpb", index_periods))
-                          for dest, spec in active]
-            html.append(f'<tr class="origin-hdr"><td colspan="{ncols}">{s}</td></tr>')
-            html.extend(_variant_value_rows(label_rows, cell_fn=_fob_cell_int))
-        html.append('</tbody></table>')
-        table_html = ''.join(html)
-        st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
-        _table_actions(table_html, "bn_state_index.png")
-        st.caption("Best (highest) FOB among every origin in that state, per destination, per "
-                   "one of the 4 clean months — FH/LH splits and packages (Split Nov, OND, "
-                   "etc.) are folded into these columns rather than listed separately (see "
-                   "the Rail FOB and BN Origins tables above/below for every period exactly "
-                   f"as posted). Blue = the better destination. Only periods whose first "
-                   f"named month is currently published ({published_disp}) show a value.")
+        _bn_fob_by_origin(rows, active, cells_by_dest, window)
+    else:
+        st.caption("No BN PNW/Hereford postings on or before this date yet.")
 
     st.markdown("### BN Origins")
     if asof_bits:
@@ -1268,6 +1348,8 @@ def _bn_tab(sel_date):
                    + " · ".join(f"{w['label']} {w['fsc_per_mile']:.2f}" for w in window)
                    + ". BN Cars premium \\$/car (Hereford takes half): "
                    + " · ".join(f"{w['label']} {w['cars']:,.0f}" for w in window) + ".")
+
+    _bn_inputs_section(inputs)
 
 
 _CN_LETTER = {v: k[-1].upper() for k, v in FD.CN_RATE_FIELD.items()}

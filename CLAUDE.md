@@ -14,8 +14,9 @@ and the CSX / NS / BN / CN freight workbooks. `app.py` is the whole UI; `rail_da
 
 Freight is built the way Kolten's "Fob BN Corn Plus.xlsx" > "PNW Facing Corn Rates" tab (H16:Y100) builds it: `rate + miles x FSC + BN Cars`, Hereford
 taking cars / 2, / 4000 bu/car for cents. `bn_freight_seed.json` holds the per-origin face rates and lane miles (13 origins; `source` lists the sheet's cells), the
-`index_periods` the tab shows in the FOB Index by State and runs bid inference on (Oct / Nov / Dec / JFM — `app.py`'s `_BN_TARGET_MONTHS` reads them, no code change
-on a roll), and `defaults`: the inputs used until something is saved. The two inputs that move are **fed on the BN tab** (the "BN freight inputs" section, right under the delivered PNW / Hereford quotes: shuttle table, then FSC):
+`index_periods` the tab shows in "FOB by Origin" (Kolten's "FOB BN" sheet layout, 2026-10-28: one row per origin, PNW | Hereford under each period, the bid in a yellow row, a BN Car Val / FSC per Mi row, red parentheses for negatives, the better destination shaded — it replaced the state index) and runs bid inference on (Oct / Nov / Dec / JFM — `app.py`'s `_BN_TARGET_MONTHS` reads them, no code change
+on a roll), and `defaults`: the inputs used until something is saved. The two inputs that move are **fed on the BN tab** (the "BN freight inputs" section at the bottom of the tab: shuttle quote editor, FSC grid, preview, Save). The saved quotes also show as a read-only bids/offers-style
+"Secondary freight" sheet right under the delivered PNW / Hereford quotes, with the FSC as a quiet line below it (`_bn_secondary_table`):
 the secondary-market **BN 110-car shuttle quotes** (bid / offer by shuttle period, the daily sheet Kolten gets) and the **FSC $/mile by month** (a 12-row Oct..Sep grid,
 plus an optional per-month cars override). A month with no FSC has no freight, so its bids show "—" until one is entered — that is how more months get added.
 
