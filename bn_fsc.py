@@ -71,11 +71,13 @@ def _minus(year, month, n):
     return i // 12, i % 12 + 1
 
 
-def auto_table(weekly, today):
-    """{month key: {fsc, kind, basis}} for the grid. kind: 'published' (source month complete), 'open' (source
+def auto_table(weekly, today, fn=None):
+    """{month key: {fsc, kind, basis, year, month}} for the grid. `fn` maps a diesel price to $/mile (BN's formula
+    unless another railroad's is passed — rail_fsc.py). kind: 'published' (source month complete), 'open' (source
     month in progress, average so far) or 'forecast' (latest weekly price held flat)."""
     if not weekly:
         return {}
+    fn = fn or fsc_from_diesel
     pts = [(date.fromisoformat(d), v) for d, v in weekly]
     latest_d, latest_v = pts[-1]
     out = {}
@@ -86,13 +88,13 @@ def auto_table(weekly, today):
         complete = bool(vals) and (nxt.year, nxt.month) > (sy, sm)
         if complete:
             avg = sum(vals) / len(vals)
-            out[k] = {"fsc": fsc_from_diesel(avg), "kind": "published",
+            out[k] = {"fsc": fn(avg), "kind": "published", "year": y, "month": m,
                       "basis": f"{_MONTH[sm]} diesel {avg:.3f}"}
         elif vals:
             avg = sum(vals) / len(vals)
-            out[k] = {"fsc": fsc_from_diesel(avg), "kind": "open",
+            out[k] = {"fsc": fn(avg), "kind": "open", "year": y, "month": m,
                       "basis": f"{_MONTH[sm]} diesel so far {avg:.3f}"}
         else:
-            out[k] = {"fsc": fsc_from_diesel(latest_v), "kind": "forecast",
+            out[k] = {"fsc": fn(latest_v), "kind": "forecast", "year": y, "month": m,
                       "basis": f"latest diesel {latest_v:.3f} held flat"}
     return out

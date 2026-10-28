@@ -32,6 +32,7 @@ import bn_fsc as BNF
 import bn_inputs as BNI
 import freight_data as FD
 import rail_data as RD
+import rail_reference as REF
 import river_data as RVD
 import shipment_data as SD
 from rail_corridors import MANUAL_SECTIONS, RAIL_DISPLAY, RAIL_COLORS
@@ -74,6 +75,7 @@ try:
     # remain only as a rollback. rail_data/river_data pin their own database+schema
     # at connect time, so SNOWFLAKE_DATABASE/SCHEMA need not be set here.
     for _secret_key in ("BASIS_DATABASE_URL", "RIVER_DATABASE_URL", "USDA_APP_TOKEN", "EIA_API_KEY",
+                        "RAIL_VIEW_ONLY",
                         "USE_SNOWFLAKE", "SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER",
                         "SNOWFLAKE_PASSWORD", "SNOWFLAKE_ROLE", "SNOWFLAKE_WAREHOUSE",
                         "SNOWFLAKE_DATABASE", "SNOWFLAKE_SCHEMA"):
@@ -100,6 +102,14 @@ try:
 except TypeError:  # older Streamlit without st.html JS support
     import streamlit.components.v1 as _stc
     _stc.html(_BADGE_JS, height=0)
+
+
+def _view_only():
+    """A view-only build (Kolten, 2026-10-28): no BN freight inputs, no editing anywhere. Switched on by the
+    RAIL_VIEW_ONLY secret (a separate Cloud app that nobody can edit from) or, for a quick shareable link, ?view=1."""
+    if os.environ.get("RAIL_VIEW_ONLY", "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    return str(st.query_params.get("view", "")).strip().lower() in ("1", "true", "yes")
 
 
 @st.cache_data
@@ -171,6 +181,7 @@ _TABLE_CSS = f"""
   table.sheet td.fobv {{ text-align: center; }}
   table.sheet td.fobv.neg {{ color: #c00000; }}
   table.sheet td.fobv.divide {{ background: #fbe5d6; }}
+  table.sheet td.ovr {{ border-bottom: 1px dotted #64748b; }}
   table.sheet td.pending {{ color: #94a3b8; }}
   table.sheet .off {{ color: {JPSI_BLUE}; font-weight: 600; }}
   .fut-sub {{ font-size: 0.68rem; color: #9aa5b1; font-weight: 400; }}
@@ -331,6 +342,9 @@ st.markdown(
     f'</div>',
     unsafe_allow_html=True,
 )
+
+if _view_only():
+    st.caption("View only")
 
 if not RD.configured():
     st.warning(
@@ -1229,12 +1243,32 @@ def _bn_inputs_section(state, auto, weekly, diesel_err):
             st.caption("Leave a month blank to hold the latest FSC; type one to replace it, and every later blank "
                        "month follows it.")
 
+    with st.container():
+        st.markdown("**Delivered bid overrides**")
+        cur = BNI.bid_overrides(payload)
+        g = lambda dest, p, f: (cur.get(dest, {}).get(p) or {}).get(f)
+        odf = pd.DataFrame([{"period": p, "pnw_bid": g("PNW", p, "bid"), "pnw_offer": g("PNW", p, "offer"),
+                             "herf_bid": g("Hereford", p, "bid"), "herf_offer": g("Hereford", p, "offer")}
+                            for p in _BN_TARGET_MONTHS]).astype({c: float for c in ("pnw_bid", "pnw_offer", "herf_bid", "herf_offer")})
+        edited_o = st.data_editor(
+            odf, hide_index=True, disabled=["period"], width="stretch", key=f"bn_ovr_{ver}",
+            column_config={"period": st.column_config.TextColumn("Period"),
+                           "pnw_bid": st.column_config.NumberColumn("PNW bid", format="%.0f"),
+                           "pnw_offer": st.column_config.NumberColumn("PNW offer", format="%.0f"),
+                           "herf_bid": st.column_config.NumberColumn("Hereford bid", format="%.0f"),
+                           "herf_offer": st.column_config.NumberColumn("Hereford offer", format="%.0f")})
+        st.caption("Cents. Type a bid (and offer) to replace what the board shows for a headline period — for a posting "
+                   "that hasn't come through, say. Blank uses the board; typed ones are underlined in FOB by Origin.")
+
     new_payload = {
         "as_of": as_of.isoformat(),
         "fsc_mode": "formula" if formula else "typed",
         "hold_fsc": hold,
         "quotes": [{"period": str(r.period).strip(), "bid": _num(r.bid), "offer": _num(r.offer)}
                    for r in edited_q.itertuples() if isinstance(r.period, str) and r.period.strip()],
+        "bid_overrides": {dest: {r.period: {"bid": _num(getattr(r, f"{pre}_bid")), "offer": _num(getattr(r, f"{pre}_offer"))}
+                                 for r in edited_o.itertuples() if _num(getattr(r, f"{pre}_bid")) is not None}
+                          for dest, pre in (("PNW", "pnw"), ("Hereford", "herf"))},
         "months": [{"key": str(r.month).lower(),
                     "fsc": by_key.get(str(r.month).lower(), {}).get("fsc") if formula else _num(r.fsc),
                     "fsc_override": _num(r.fsc) if formula else by_key.get(str(r.month).lower(), {}).get("fsc_override"),
@@ -1268,7 +1302,7 @@ def _bn_fob_cell(v):
     return (f"({abs(v):.1f})", " neg") if v < 0 else (f"{v:.1f}", "")
 
 
-def _bn_fob_by_origin(rows, active, cells_by_dest, window):
+def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides):
     """FOB (¢/bu) per origin, PNW | Hereford side by side under each of the headline periods, in the layout of
     Kolten's "FOB BN" sheet (2026-10-28): the bid in a yellow row, the BN Car Val / FSC per Mi row, and the
     better destination for each origin shaded (the geographical PNW-Hereford divide)."""
@@ -1286,6 +1320,13 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window):
     def num(v):
         return f"{v:+.0f}" if float(v).is_integer() else f"{v:+.1f}"
 
+    def quote(dest, p):
+        """((bid, offer) | None, typed override?) — a bid typed in BN freight inputs replaces the board's."""
+        ov = (overrides.get(dest) or {}).get(p)
+        if ov and ov.get("bid") is not None:
+            return (ov["bid"], ov.get("offer")), True
+        return _bn_effective_quote(cells_by_dest[dest], p), False
+
     def quote_html(q):
         if q is None:
             return "—"
@@ -1296,7 +1337,7 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window):
             + ''.join(f'<th class="grp gl" colspan="{n}">{p}</th>' for p in periods) + '</tr>',
             '<tr>' + ''.join(f'<th class="sub{gl(i)}">{dest}</th>'
                              for _ in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
-            '<tr>' + ''.join(f'<td class="bidrow{gl(i)}">{quote_html(_bn_effective_quote(cells_by_dest[dest], p))}</td>'
+            '<tr>' + ''.join(f'<td class="bidrow{" ovr" if quote(dest, p)[1] else ""}{gl(i)}">{quote_html(quote(dest, p)[0])}</td>'
                              for p in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
             '<tr class="carsrow"><td class="lbl">BN Car Val / FSC per Mi</td>']
     for p in periods:
@@ -1311,7 +1352,8 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window):
         for p in periods:
             vals = []
             for dest, spec in active:
-                bid = _bn_effective_bid(cells_by_dest[dest], p)
+                q = quote(dest, p)[0]
+                bid = q[0] if q else None
                 frt = FD.bn_freight_cpb(r[spec["field"] + "_cpb"], p)
                 vals.append(None if bid is None or frt is None else bid - frt)
             best = max(range(n), key=lambda i: vals[i]) if sum(v is not None for v in vals) == 2 else None
@@ -1324,7 +1366,7 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window):
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
     _table_actions(table_html, "bn_fob_by_origin.png")
     st.markdown(
-        '<div class="legend">¢/bu, bid − freight: negatives in parentheses. The yellow row is the bid / offer used (a Split '
+        '<div class="legend">¢/bu, bid − freight: negatives in parentheses; a dotted underline marks a bid typed in BN freight inputs. The yellow row is the bid / offer used (a Split '
         "month, FH+LH averaged or the OND / AMJJ package filled in where that period wasn't posted). BN Car Val is the "
         'secondary-market shuttle bid in &#36;/car (Hereford takes half) and FSC is &#36;/mile, both from the inputs '
         'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide).</div>',
@@ -1361,7 +1403,7 @@ def _bn_tab(sel_date):
 
     st.markdown("### FOB by Origin")
     if any(cells_by_dest.values()):
-        _bn_fob_by_origin(rows, active, cells_by_dest, window)
+        _bn_fob_by_origin(rows, active, cells_by_dest, window, BNI.bid_overrides(inputs["payload"]))
     else:
         st.caption("No BN PNW/Hereford postings on or before this date yet.")
 
@@ -1431,7 +1473,8 @@ def _bn_tab(sel_date):
                    + ". BN Cars premium \\$/car (Hereford takes half): "
                    + " · ".join(f"{w['label']} {w['cars']:,.0f}" for w in window) + ".")
 
-    _bn_inputs_section(inputs, auto, weekly, diesel_err)
+    if not _view_only():
+        _bn_inputs_section(inputs, auto, weekly, diesel_err)
 
 
 _CN_LETTER = {v: k[-1].upper() for k, v in FD.CN_RATE_FIELD.items()}
@@ -1812,16 +1855,18 @@ def _shipments_tab():
                "Dashboard. This is shipment VOLUME, not a freight rate — a different "
                "question from the FOB tabs above (\"how much moved\" vs. \"what does it cost\").")
 
-    with st.expander("Data source"):
-        token = st.text_input("USDA App Token (optional)", type="password",
-                               help="Free token from agtransport.usda.gov — increases rate limits.",
-                               key="ship_token")
-        if st.button("Refresh from live API", key="ship_refresh"):
-            st.cache_data.clear()
-            st.session_state["ship_force_api"] = True
-            st.rerun()
-        st.caption("Loads from bundled data by default; use the button above for the latest.")
-        st.caption("KCS reported as a national total only (no state breakdown).")
+    token = ""
+    if not _view_only():
+        with st.expander("Data source"):
+            token = st.text_input("USDA App Token (optional)", type="password",
+                                   help="Free token from agtransport.usda.gov — increases rate limits.",
+                                   key="ship_token")
+            if st.button("Refresh from live API", key="ship_refresh"):
+                st.cache_data.clear()
+                st.session_state["ship_force_api"] = True
+                st.rerun()
+            st.caption("Loads from bundled data by default; use the button above for the latest.")
+            st.caption("KCS reported as a national total only (no state breakdown).")
 
     _secret_token = os.environ.get("USDA_APP_TOKEN", "")
     if not _secret_token:
@@ -2635,8 +2680,9 @@ def _netcarry_tab():
         st.caption("Pick more corridors above to compare them with this one.")
 
 
-bids_tab, csx_tab, ns_tab, bn_tab, cn_tab, map_tab, refs_tab, ship_tab, carry_tab = st.tabs(
-    ["📋 Bids", "CSX", "NS", "BN", "CN", "🗺️ Map", "🔗 References", "📦 Shipments", "💵 Net Carry"])
+bids_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, refs_tab, ship_tab, carry_tab = st.tabs(
+    ["📋 Bids", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "🔗 References", "📦 Shipments", "💵 Net Carry"])
+_diesel_weekly = _bn_auto_fsc()[1]
 
 with bids_tab:
     st.markdown("### Manual Rail Corridors (chat-fed)")
@@ -2644,15 +2690,23 @@ with bids_tab:
 
 with csx_tab:
     _csx_tab(_manual_date)
+    REF.render("CSX", _diesel_weekly)
 
 with ns_tab:
     _ns_tab(_manual_date)
+    REF.render("NS", _diesel_weekly)
 
 with bn_tab:
     _bn_tab(_manual_date)
+    REF.render("BN", _diesel_weekly)
 
 with cn_tab:
     _cn_tab()
+    REF.render("CN", _diesel_weekly)
+
+with up_tab:
+    st.caption("UP's corridor bids are on the Bids tab; this tab holds UP's grain shuttle program and fuel surcharge for reference.")
+    REF.render("UP", _diesel_weekly)
 
 with map_tab:
     _map_tab()

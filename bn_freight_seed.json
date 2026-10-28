@@ -12,6 +12,20 @@
     "as_of": "2026-10-28",
     "fsc_mode": "formula",
     "hold_fsc": true,
+    "bid_overrides": {
+      "Hereford": {
+        "Oct": {
+          "bid": 85,
+          "offer": null
+        }
+      },
+      "PNW": {
+        "Dec": {
+          "bid": 100,
+          "offer": null
+        }
+      }
+    },
     "quotes": [
       {
         "period": "Return Trip",

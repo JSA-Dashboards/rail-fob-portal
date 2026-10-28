@@ -41,6 +41,24 @@ in app.py (`_bn_infer_quote`, a (bid, offer) pair from ONE posting; display only
 LH Nov can't drag Nov down) > FH/LH average (or the lone half) > the containing package (AM and JJ from AMJJ) > for Oct/Nov/Dec the OND package, reverse-averaged against Oct. The
 secondary freight sheet draws the shuttle quotes in the delivered board's grid format (periods across, bid with the offer in blue, BNSF / as-of chips).
 
+## Railroad reference (2026-10-28) — `rail_reference.py`, `rail_fsc.py`, `data/rail_directory/`
+
+Under each railroad tab (CSX, NS, BN, CN, and a UP tab after CN) `rail_reference.render(rr, weekly)` draws two kinds of collapsed expander. Each loads only when opened (`st.expander(on_change="rerun")` + `.open`; an
+older Streamlit without it just loads them always).
+- **Fuel surcharge** (`rail_fsc.PROGRAMS`): each railroad's mileage-based grain program on EIA diesel, two-month lag — BN strike 3.25 / 1¢ per 5¢ / round up (fitted); UP 2.30 / 5¢ / full steps + 5¢ base (UP's page);
+  NS 2.50 / 4¢ / round up on diesel cut to the cent (NS's page, rounding inferred); CN 2.30 / 0.575¢ per 2.5¢ / round up (CN 7403, rounding inferred); CSX ~3.749 / 4¢ / round up (INFERRED — CSX's own page wasn't readable).
+  The expander shows the equation, the next six months worked out from the EIA weekly diesel (the same feed and cache as the BN FSC), the railroad's published values beside them, and how sure each point is.
+  `tests/test_rail_fsc.py` keeps every published value reproducible; check the next month each railroad publishes against it. Not verified: that grain shuttles move under the public UP / NS / CSX programs rather than a contract one.
+- **Directories** — the six files in `JSA - Documents/Research Analyst/Misc/Rail Origins & Destinations` (BNSF Shippers, CSX Shippers, NS Grain Loaders, Map CN Origins, UP grain loaders PDF, BN Corn Shuttle Rates 2026), parsed ONCE into
+  `data/rail_directory/*.json` (the extraction script wasn't kept; re-parse from the originals when they change). **The repo is public, so only business facility data is archived — BNSF's contact names, titles, emails, phones and faxes are not**
+  (the originals on SharePoint are the full archive). The UP list is as issued Oct 2023 and the BN shuttle rates are BNSF price list PA-00055472-40 v86 (1/26/2026); the freight build's face rates are that list's third column (286K lb, 5,001+ cu ft) plus later increases (mostly $200/car on PNW).
+
+**View-only build:** `RAIL_VIEW_ONLY` (a secret/env var, for a separate Cloud app nobody edits from) or `?view=1` on the URL hides the BN freight inputs section (the editors, Save) and the Shipments token / refresh box. The read-only
+secondary-freight sheet stays. `?view=1` is only a convenience — anyone can drop it from the URL; the real separation is a second app with the secret.
+
+**Delivered bid overrides:** BN freight inputs has a Hereford / PNW bid (and offer) grid per headline period that replaces what the board shows in FOB by Origin (underlined dotted). The seed's defaults — Hereford Oct +85, PNW Dec +100 (Kolten, 2026-10-28) —
+apply until something is saved, then whatever is saved wins (`bn_inputs.bid_overrides`).
+
 ## 💵 Net Carry tab (the last tab)
 
 The basis tracker's Net Carry tab for rail corridors: each posted delivery's basis re-expressed against ONE futures

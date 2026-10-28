@@ -109,6 +109,14 @@ def default_payload():
     return copy.deepcopy(FD.load_bn_seed()["defaults"])
 
 
+def bid_overrides(payload):
+    """{destination: {headline period: {bid, offer}}} typed over the board's delivered bids in FOB by Origin
+    (Kolten, 2026-10-28: Hereford Oct +85, PNW Dec +100). A payload saved before the feature existed takes the
+    seed's; once saved it keeps whatever is typed, even none."""
+    src = payload["bid_overrides"] if "bid_overrides" in payload else default_payload().get("bid_overrides", {})
+    return {dest: {p: v for p, v in per.items() if v and v.get("bid") is not None} for dest, per in (src or {}).items()}
+
+
 def month_rows(payload, auto=None):
     """Per month in crop-year order: key, fsc, the BN Cars $/car the freight will use and
     where each came from — what the tab shows as a preview and what effective_window()

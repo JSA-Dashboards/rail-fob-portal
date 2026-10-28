@@ -82,4 +82,12 @@ assert "apr" not in FD.load_bn(woff)[0]["pnw"], "hold off: no FSC, no freight"
 assert BNI.problems({"quotes": [{"period": "Weekly special", "bid": 1}], "months": [{"key": "oct", "fsc": 9}]})
 eq(BNI.problems(d), [], "the defaults are clean")
 
+# --- delivered bid overrides: the seed's until something is saved, then whatever is saved
+eq(BNI.bid_overrides(d), {"Hereford": {"Oct": {"bid": 85, "offer": None}}, "PNW": {"Dec": {"bid": 100, "offer": None}}}, "defaults")
+old = {k: v for k, v in d.items() if k != "bid_overrides"}
+eq(BNI.bid_overrides(old), BNI.bid_overrides(d), "a payload saved before the feature takes the seed's")
+eq(BNI.bid_overrides(dict(d, bid_overrides={})), {}, "saving none means none")
+eq(BNI.bid_overrides(dict(d, bid_overrides={"PNW": {"Oct": {"bid": None, "offer": 5}, "Nov": {"bid": 90, "offer": 110}}})),
+   {"PNW": {"Nov": {"bid": 90, "offer": 110}}}, "a blank bid is no override")
+
 print("test_bn_inputs: all ok")
