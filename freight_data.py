@@ -292,6 +292,21 @@ CN_COMMODITIES = ["Corn", "Soybeans"]
 CN_LB_PER_BU = {"Corn": 56, "Soybeans": 60}
 
 
+# USDA AMS Grain Transportation Report 10-22-26, Table 7: CN Gibson City, IL -> Reserve, LA, large covered hopper (C-114), 90+ car
+# shuttle, tariff per car. The seed (Supplement 41) is the same $495/car lower for BOTH car sources (Large 105+: $2,516 / $2,136), so
+# CN's rates read as one flat step up since the supplement (Kolten, 2026-10-28: "CN raised rates this year starting in Oct. Use USDA
+# numbers"); applied to every origin as a uniform $/car — USDA lists no other CN origin to check that against.
+CN_USDA = {"origin": ("GIBSON CITY", "IL"), "tier": "105+ cars", "Railroad": 3011, "Private": 2631,
+           "source": "USDA AMS Grain Transportation Report 10-22-26, Table 7"}
+
+
+def cn_usda_uplift():
+    """$/car that CN's tariff stands above the seed at the USDA origin (the large-car columns, rate_b railroad / rate_d private)."""
+    r = next(r for r in load_cn() if (r["origin"], r["state"]) == CN_USDA["origin"] and r["tier"] == CN_USDA["tier"])
+    gaps = {CN_USDA["Railroad"] - r["rate_b"], CN_USDA["Private"] - r["rate_d"]}
+    return gaps.pop() if len(gaps) == 1 else round(sum(gaps) / len(gaps))
+
+
 def cn_freight_cpb(rate, size, commodity="Corn", extra=0.0):
     """$/car -> ¢/bu for CN's freight, given a car size and commodity. `extra` is more $/car on top of the tariff rate
     (the fuel surcharge: $/mile x miles, cn_miles.py)."""

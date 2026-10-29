@@ -40,4 +40,6 @@ w2 = RF.window("CN", [("2026-10-12", 5.5), ("2026-10-19", 5.5), ("2026-10-26", 5
 assert w2["oct"]["kind"] == "published" and w2["dec"]["kind"] == "formula"
 assert FD.bn_period_first_month("FM") == 2 and FD.bn_period_first_month("AMJJ") == 4
 assert abs(FD.cn_freight_cpb(3000, "Small", "Corn", 600) - 3600 / FD.CN_BU_PER_CAR["Corn"]["Small"] * 100) < 1e-9
+# ---- USDA tariff level: the seed is the same $ below USDA's Gibson City rate on both car sources (flat step, not a percent)
+assert FD.cn_usda_uplift() == 495 and FD.CN_USDA["Railroad"] - 2516 == FD.CN_USDA["Private"] - 2136 == 495
 print("test_cn_miles: all ok")

@@ -1757,7 +1757,7 @@ def _cn_origin_block(r, base_fn, freight_fn, months, active_cols, ncols):
             *_variant_value_rows(label_rows)]
 
 
-def _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles):
+def _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift=0):
     """make(over) -> freight_fn(row, size, rate field, period) in ¢/bu: the tariff rate plus, when the fuel surcharge is on,
     that period's CN 7403 $/mile x the origin's miles to the Gulf (cn_miles.py; `over` = {(origin, state): typed miles}).
     None when the surcharge or the miles aren't known, so the cell shows "—" rather than a freight without its fuel."""
@@ -1765,14 +1765,14 @@ def _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles):
         over = over or {}
 
         def freight(r, size, field, m):
-            extra = 0.0
+            extra = float(uplift)
             if fsc_on:
                 key = (r["origin"], r["state"])
                 mi = over[key] if key in over else CM.miles_to_gulf(key[0], key[1], champ_miles)[0]
                 f = fsc_by_m.get(m)
                 if f is None or mi is None:
                     return None
-                extra = f * mi
+                extra += f * mi
             return FD.cn_freight_cpb(r[field], size, commodity, extra)
         return freight
     return make
@@ -1861,8 +1861,16 @@ def _cn_tab(sel_date):
                                       help="About Gibson City's 983 (the USDA tariff table's fuel surcharge ÷ CN's \\$/mile). "
                                            "Other origins are this plus their estimated distance from Champaign; against a "
                                            "bid FOB Champaign it cancels, and only the difference in miles is charged.")
+    usda_gap = FD.cn_usda_uplift()
+    uplift = st.number_input("CN tariff level — added to every tariff rate (\\$/car)", step=25, value=usda_gap, key="cn_uplift",
+                             help="The tariff rates in the seed (Supplement 41) are the same amount under USDA's October tariff for "
+                                  "Gibson City on both car sources; CN raised its rates this year (October). 0 = the seed's rates as is.")
+    st.caption(f"USDA AMS GTR 10-22-26, Gibson City → Reserve, large car: \\${FD.CN_USDA['Railroad']:,} railroad / "
+               f"\\${FD.CN_USDA['Private']:,} private, against the seed's 105+ car rate \\${usda_gap:,} lower for both; the same "
+               f"\\${usda_gap:,} is added to every origin's rates (USDA lists no other CN origin to check it on). It cancels in the "
+               "bean-bid view, where only the difference from Champaign counts.")
     fsc_by_m = {}
-    make_freight = _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles)
+    make_freight = _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift)
     freight_fn = make_freight()
 
     # ── FOB sections up top; the raw tariff table moves to the bottom for reference — Kolten's call,
