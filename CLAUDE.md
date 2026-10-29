@@ -195,8 +195,9 @@ UP Allen Station's weekly Spot history before its actual bids (2023-05-31) was a
 ### UI traps
 
 - **Tab order:** the railroad logos on the CSX / NS / BN / CN tabs are CSS-keyed to position
-  (`[role="tab"]:nth-of-type(2..5)`), so new tabs go at the END of `st.tabs`. The same selectors also land on the
-  Shipments tab's nested sub-tabs 2-5 (they show the CSX / NS / BN / CN logos) — scope them if that ever matters.
+  (`[role="tab"]:nth-of-type(3..6)` since the State Summary became tab 2, 2026-10-28), so adding a tab before position 7 means
+  shifting those four numbers. The same selectors also land on the Shipments tab's nested sub-tabs 3-6 (they show the CSX / NS / BN / CN
+  logos) — scope them if that ever matters.
 - **`@st.fragment`:** the tab is a fragment, so a widget change reruns only this tab. A cold page load still runs every
   tab first, so Net Carry (last) fills in after the others, and Streamlit lazy-loads the Vega chart (a grey placeholder
   for a few seconds).
@@ -235,6 +236,7 @@ tab with headless Playwright at 1280 and 390 px (the chart legend clips on a pho
 - **BN tab in the CSX layout (2026-10-28, Kolten: "make the BN table with all the locations the same as CSX, key corridors listed with highlighted origins")**: **FOB by State — PNW vs Hereford** (`_bn_fob_by_origin(by_state=True)`: best FOB among ALL BNSF locations — the sheet's 13 + the price list's ~180 with estimated miles, `_bn_all_rows`), then **Key Corridors — Highlighted Origins** (the sheet's 13 origins, the old "FOB by Origin"), then **FOB at Any BN Location**. The old "BN Origins" block further down is unchanged.
 
 ## State Summary tab (2026-10-28, Kolten: "a summary page with state-indexed FOB values compared across all rail corridors, like the BN table, several delivery periods")
-- Last tab, "📊 State Summary" (`_summary_tab`, a fragment; new tabs go at the END because the carrier logos are CSS-keyed to tab position 2-5). A multiselect (`sum_periods`, default Oct / Nov / Dec when posted) picks delivery periods; each gets its own table: states down, corridors across — CSX Columbus, CSX Evansville, NS Ft Wayne, BN PNW, BN Hereford, CN Gulf (CIF NOLA) — a yellow bid row, the best corridor per state shaded and named in a Best column.
+- Second tab, "📊 State Summary" (`_summary_tab`, a fragment; behind Bids, with the logo CSS shifted to tabs 3-6). It shows the NEXT FIVE WHOLE MONTHS (Nov, Dec, Jan, Feb, Mar on 10-28; checkbox `sum_cur` adds the current month), one table each: states down, corridors across — CSX Columbus, CSX Evansville, NS Ft Wayne, BN PNW, BN Hereford, CN Gulf (CIF NOLA) — a yellow bid row, the best corridor per state shaded and named in a Best column.
 - `_summary_corridors` builds each corridor's STATE INDEX (best origin in the state) from the same freight / fuel surcharge / bids as its own tab: CSX no FSC; NS 105-car origins, cheapest of its 3 regions, with FSC; BN every location (the sheet's 13 + price list, estimated miles), headline periods only (AMJJ→AM); CN corn off the CIF NOLA curve, 105+ car, large railroad car, USDA tariff level + FSC on estimated miles, a period mapping to the CIF month it starts in (no CIF curve reachable → CN left out, with a note). UP has no state freight table, so it isn't in it.
 - Periods match by LABEL (case-insensitive), so a label one corridor doesn't post shows "—" there (e.g. "FH Nov" is CSX/NS only). Verified with a stubbed AppTest (`scratchpad/test_summary.py`), not in a browser.
+- Each corridor's bid is resolved to the WHOLE month by `_month_quote`: the plain month, else Split <month>, else FH/LH averaged, else the narrowest posted package covering it (`FD.period_months`: JFM = Jan-Mar, AMJJ = Apr-Jul, "Jan July" = Jan-Jul, FM = Feb-Mar); a bid not posted as the month itself is starred (*). BN's Oct/Nov/Dec keep the BN tab's own inference and typed bids. Freight and fuel surcharge use that month.

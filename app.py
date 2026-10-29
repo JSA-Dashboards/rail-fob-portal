@@ -310,23 +310,22 @@ st.markdown(
       /* Railroad logos on their tabs, in place of a generic emoji. Streamlit's
          st.tabs() only takes plain text, so this positions each carrier's mark
          via nth-of-type — must stay in sync with the literal tab order below
-         (Bids, CSX, NS, BN, CN, Map, References, Shipments, Net Carry). Logos sit on
-         tabs 2-5, so a new tab goes at the END of the list; inserting one before
-         position 5 would slide every logo onto the wrong tab. */
+         (Bids, State Summary, CSX, NS, BN, CN, UP, Map, References, Shipments, Net Carry). Logos sit on
+         tabs 3-6, so inserting a tab before position 6 means shifting these four numbers with it. */
       [role="tab"] p {{ display: flex; align-items: center; gap: 6px; }}
-      [role="tab"]:nth-of-type(2) p::before {{
+      [role="tab"]:nth-of-type(3) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{CSX_LOGO_URI}') no-repeat center / contain;
       }}
-      [role="tab"]:nth-of-type(3) p::before {{
+      [role="tab"]:nth-of-type(4) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{NS_LOGO_URI}') no-repeat center / contain;
       }}
-      [role="tab"]:nth-of-type(4) p::before {{
+      [role="tab"]:nth-of-type(5) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{BNSF_LOGO_URI}') no-repeat center / contain;
       }}
-      [role="tab"]:nth-of-type(5) p::before {{
+      [role="tab"]:nth-of-type(6) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{CN_LOGO_URI}') no-repeat center / contain;
       }}
@@ -3121,85 +3120,109 @@ def _netcarry_tab():
         st.caption("Pick more corridors above to compare them with this one.")
 
 
-def _summary_corridors(sel_date):
-    """The corridors the Summary tab compares: [{label, bid(p) -> text, fob(state, p) -> ¢/bu | None, note}] and the sorted
-    list of delivery periods. Each corridor's value is its STATE INDEX — the best (highest) FOB among that state's origins —
-    built from the same freight, fuel surcharge and bids as the railroad's own tab, matched to the selector's period by its
-    label (BN by its headline periods, CN by the CIF month the period starts in)."""
+def _month_quote(cells, month):
+    """(bid, offer, how) for ONE whole calendar month (1-12) from a corridor's posted periods {label: row}, or None:
+    the plain month; else Split <month> (a full month wins); else FH / LH <month> averaged (or whichever one is posted); else the
+    narrowest posted package that covers it (JFM covers Jan-Mar, AMJJ Apr-Jul, "Jan July" Jan-Jul ...). how: 'month' | 'inferred'."""
+    def pair(c):
+        return (c["bid"], c.get("offer")) if c and c.get("bid") is not None else None
+    name = calendar.month_abbr[month]
+    by_lower = {p.strip().lower(): c for p, c in cells.items()}
+    for key in (name.lower(), calendar.month_name[month].lower()):
+        q = pair(by_lower.get(key))
+        if q:
+            return (*q, "month")
+    q = pair(by_lower.get(f"split {name.lower()}"))
+    if q:
+        return (*q, "inferred")
+    fh, lh = pair(by_lower.get(f"fh {name.lower()}")), pair(by_lower.get(f"lh {name.lower()}"))
+    if fh and lh:
+        return ((fh[0] + lh[0]) / 2, _bn_mean(fh[1], lh[1]), "inferred")
+    if fh or lh:
+        return (*(fh or lh), "inferred")
+    covering = []
+    for p, c in cells.items():
+        months = FD.period_months(p)
+        if len(months) > 1 and month in months and c.get("bid") is not None:
+            covering.append((len(months), c.get("period_order") or 99, p, c))
+    if covering:
+        c = min(covering, key=lambda t: t[:3])[3]
+        return (c["bid"], c.get("offer"), "inferred")
+    return None
+
+
+def _summary_corridors(sel_date, months):
+    """The corridors the State Summary compares, for `months` = [(1-12, 'Nov'), ...]: [{label, bid(m) -> text, fob(state, m) -> ¢/bu
+    | None, states}] and the footnotes. Each value is the corridor's STATE INDEX — the best (highest) FOB among that state's
+    origins — built from the same freight, fuel surcharge and bids as the railroad's own tab, with each corridor's bid resolved to
+    the WHOLE month (see _month_quote)."""
     corridors, notes = [], []
-    all_periods = {}
+    labels = {m: lbl for m, lbl in months}
 
-    def keep(p, c):
-        if _keep_period(p):
-            all_periods.setdefault(p, _period_key(c.get("period_order"), p))
-
-    def bid_text(cells, p):
-        c = cells.get(p) or {}
-        return "—" if c.get("bid") is None else f"{c['bid']:+.0f}" + (f" / {c['offer']:+.0f}" if c.get("offer") is not None else "")
+    def bid_text(q):
+        if q is None:
+            return "—"
+        return f"{q[0]:+.0f}" + (f" / {q[1]:+.0f}" if q[1] is not None else "") + ("*" if q[2] != "month" else "")
 
     # ---- CSX: Columbus and Evansville, no fuel surcharge (noted on its tab)
     csx = FD.load_csx()
     for label, market, field in (("CSX Columbus", "CSX Columbus", "columbus"), ("CSX Evansville", "CSX Evansville", "eville_altkyla")):
         cells, _eff = _bid_cells_for("manual", market, sel_date)
-        for p, c in cells.items():
-            keep(p, c)
+        quotes = {m: _month_quote(cells, m) for m, _l in months}
 
-        def fob(state, p, cells=cells, field=field):
-            bid = (cells.get(p) or {}).get("bid")
-            vals = [bid - r[field + "_cpb"] for r in csx if r["state"] == state] if bid is not None else []
+        def fob(state, m, quotes=quotes, field=field):
+            q = quotes.get(m)
+            vals = [q[0] - r[field + "_cpb"] for r in csx if r["state"] == state] if q else []
             return max(vals) if vals else None
-        corridors.append({"label": label, "bid": lambda p, cells=cells: bid_text(cells, p), "fob": fob,
+        corridors.append({"label": label, "bid": lambda m, quotes=quotes: bid_text(quotes.get(m)), "fob": fob,
                           "states": {r["state"] for r in csx}})
-    notes.append("CSX: freight from the 2026-27 origin spreads; its fuel surcharge isn't included.")
+    notes.append("CSX: the 2026-27 origin spreads; its fuel surcharge isn't included.")
 
     # ---- NS: best region, 105-car origins, with the fuel surcharge
     ns = [r for r in FD.load_ns() if r["flag_105"]]
     ftw, _eff = _bid_cells_for("manual", FD.NS_BID_MARKET, sel_date)
-    for p, c in ftw.items():
-        keep(p, c)
-    ns_periods = [p for p in ftw if _keep_period(p)]
-    ns_fsc, _parts = _fsc_by_period("NS", ns_periods) if ns_periods else ({}, [])
+    ns_quotes = {m: _month_quote(ftw, m) for m, _l in months}
+    ns_fsc, _parts = _fsc_by_period("NS", list(labels.values()))
     ns_fns = {field: _ns_freight_fn(field, True, ns_fsc) for field in FD.NS_REGIONS.values()}
 
-    def ns_fob(state, p):
-        bid = (ftw.get(p) or {}).get("bid")
-        if bid is None:
+    def ns_fob(state, m):
+        q = ns_quotes.get(m)
+        if not q:
             return None
-        vals = [bid - f for r in ns if r["state"] == state for f in (fn(r, p) for fn in ns_fns.values()) if f is not None]
+        vals = [q[0] - f for r in ns if r["state"] == state for f in (fn(r, labels[m]) for fn in ns_fns.values()) if f is not None]
         return max(vals) if vals else None
-    corridors.append({"label": "NS Ft Wayne", "bid": lambda p: bid_text(ftw, p), "fob": ns_fob, "states": {r["state"] for r in ns}})
+    corridors.append({"label": "NS Ft Wayne", "bid": lambda m: bid_text(ns_quotes.get(m)), "fob": ns_fob,
+                      "states": {r["state"] for r in ns}})
     notes.append("NS: 105-car-eligible origins, the cheapest of its three regions, with NS's fuel surcharge on the extra miles vs Ft Wayne.")
 
-    # ---- BN: PNW and Hereford over every BNSF location, headline periods
+    # ---- BN: PNW and Hereford over every BNSF location
     inputs = _bn_inputs_state()
     auto, _weekly, _err = _bn_auto_fsc()
     window = BNI.effective_window(inputs["payload"], auto)
     bn_rows = _bn_all_rows(window)
     overrides = BNI.bid_overrides(inputs["payload"])
     cells_by_dest = {dest: _bid_cells_for("manual", spec["market"], sel_date)[0] for dest, spec in FD.BN_DESTINATIONS.items()}
-    for m in _BN_TARGET_MONTHS:
-        all_periods.setdefault(m, _period_key(None, m))
-    bn_by_lower = {m.lower(): m for m in _BN_TARGET_MONTHS}
     for dest, spec in FD.BN_DESTINATIONS.items():
-        def bn_period(p):
-            return bn_by_lower.get(p.lower()) or ("AM" if p.upper() == "AMJJ" else None)
+        def bn_quote(m, dest=dest):
+            lbl = labels[m]
+            if lbl in _BN_TARGET_MONTHS:                       # Oct / Nov / Dec: the BN tab's own inference and typed bids
+                q = _bn_quote(cells_by_dest, overrides, dest, lbl)[0]
+                if q:
+                    return (q[0], q[1], "month")
+            return _month_quote(cells_by_dest[dest], m)
+        quotes = {m: bn_quote(m) for m, _l in months}
 
-        def bn_fob(state, p, dest=dest, spec=spec):
-            bp = bn_period(p)
-            q = _bn_quote(cells_by_dest, overrides, dest, bp)[0] if bp else None
-            if q is None:
+        def bn_fob(state, m, spec=spec, quotes=quotes):
+            q = quotes.get(m)
+            if not q:
                 return None
             vals = [q[0] - f for r in bn_rows if r["state"] == state
-                    for f in [FD.bn_freight_cpb(r[spec["field"] + "_cpb"], bp)] if f is not None]
+                    for f in [FD.bn_freight_cpb(r[spec["field"] + "_cpb"], labels[m])] if f is not None]
             return max(vals) if vals else None
-
-        def bn_bid(p, dest=dest):
-            bp = bn_period(p)
-            q = _bn_quote(cells_by_dest, overrides, dest, bp)[0] if bp else None
-            return "—" if q is None else f"{q[0]:+.0f}" + (f" / {q[1]:+.0f}" if q[1] is not None else "")
-        corridors.append({"label": f"BN {dest}", "bid": bn_bid, "fob": bn_fob, "states": {r["state"] for r in bn_rows}})
-    notes.append("BN: every BNSF location in the state (the sheet's 13 plus the price list's, with estimated miles), its headline periods "
-                 "only (Oct / Nov / Dec / JFM / AM / JJ; AMJJ uses AM).")
+        corridors.append({"label": f"BN {dest}", "bid": lambda m, quotes=quotes: bid_text(quotes.get(m)), "fob": bn_fob,
+                          "states": {r["state"] for r in bn_rows}})
+    notes.append("BN: every BNSF location in the state (the sheet's 13 plus the price list's, with estimated miles), freight and fuel "
+                 "surcharge for that month.")
 
     # ---- CN: corn vs CIF NOLA, 105+ car, large railroad car, with fuel surcharge and the USDA tariff level
     try:
@@ -3212,18 +3235,13 @@ def _summary_corridors(sel_date):
         seed_level = FD.cn_seed_level()
         field = FD.CN_RATE_FIELD[("Large", "Railroad")]
 
-        def cn_month(p):
-            mo = FD.bn_period_first_month(p)
-            return (mo, calendar.month_abbr[mo]) if mo else (None, None)
-
-        def cn_fob(state, p):
-            mo, name = cn_month(p)
-            price = cif.get(name) if name else None
+        def cn_fob(state, m):
+            price = cif.get(labels[m])
             if price is None:
                 return None
-            level, _k = FD.cn_tariff_level(mo, date.today())
+            level, _k = FD.cn_tariff_level(m, date.today())
             extra = 0 if level is None else level - seed_level
-            fsc = (fsc_win.get(FD._BN_MONTH3_REV[mo]) or {}).get("fsc")
+            fsc = (fsc_win.get(FD._BN_MONTH3_REV[m]) or {}).get("fsc")
             vals = []
             for r in cn:
                 if r["state"] != state:
@@ -3233,50 +3251,40 @@ def _summary_corridors(sel_date):
                     continue
                 vals.append(price - FD.cn_freight_cpb(r[field], "Large", "Corn", extra + fsc * miles))
             return max(vals) if vals else None
-
-        def cn_bid(p):
-            _mo, name = cn_month(p)
-            return "—" if not name or cif.get(name) is None else f"{cif[name]:+.0f}"
-        corridors.append({"label": "CN Gulf (CIF NOLA)", "bid": cn_bid, "fob": cn_fob, "states": {r["state"] for r in cn}})
-        notes.append("CN: corn netted back from the CIF NOLA curve (River FOB Portal), 105+ car shuttle origins, large railroad cars, "
-                     "tariff at USDA's level for the month plus CN's fuel surcharge on estimated miles; a period maps to the CIF month it starts in.")
+        corridors.append({"label": "CN Gulf (CIF NOLA)", "bid": lambda m: "—" if cif.get(labels[m]) is None else f"{cif[labels[m]]:+.0f}",
+                          "fob": cn_fob, "states": {r["state"] for r in cn}})
+        notes.append("CN: corn netted back from the CIF NOLA curve (River FOB Portal), 105+ car shuttle origins, large railroad cars, tariff at "
+                     "USDA's level for the month plus CN's fuel surcharge on estimated miles.")
     else:
         notes.append("CN: left out — no CIF NOLA corn curve (the River FOB Portal's database isn't reachable from here).")
     notes.append("UP isn't here: its corridor bids are on the Bids tab and there is no state freight table for it.")
-    periods = sorted(all_periods, key=lambda p: all_periods[p])
-    return corridors, periods, notes
+    return corridors, notes
 
 
 @st.fragment
 def _summary_tab(sel_date):
-    st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab. State-indexed FOB (¢/bu, the best origin in each state) "
-               "for every rail corridor, one delivery period per table.")
-    corridors, periods, notes = _summary_corridors(sel_date)
-    # periods that at least one corridor can price
+    st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab. State-indexed FOB (¢/bu, the best origin in each state) for "
+               "every rail corridor, one table per delivery month for the next five.")
+    include_current = st.checkbox("Start with the current month", value=False, key="sum_cur",
+                                  help="Off: the five months after this one. On: this month and the next four.")
+    today = date.today()
+    first = today.month if include_current else today.month % 12 + 1
+    months = [(((first - 1 + k) % 12) + 1, calendar.month_abbr[((first - 1 + k) % 12) + 1]) for k in range(5)]
+    corridors, notes = _summary_corridors(sel_date, months)
     states_all = sorted({s_ for c in corridors for s_ in c["states"]})
-    live = [p for p in periods if any(c["fob"](s_, p) is not None for c in corridors for s_ in c["states"])]
-    if not live:
-        st.info("No bids on or before this posting date yet.")
-        return
-    default = [p for p in live if p.lower() in {m.lower() for m in _BN_TARGET_MONTHS}][:3] or live[:3]
-    picked = st.multiselect("Delivery periods", live, default=default, key="sum_periods",
-                            help="One table per period, in this order. Add or drop periods to compare.")
-    if not picked:
-        st.caption("Pick at least one delivery period.")
-        return
-    picked = [p for p in live if p in picked]
-    n = len(corridors)
-    for p in picked:
+    for m, name in months:
         html = ['<table class="sheet"><tbody>',
-                f'<tr><th class="title" rowspan="2">FOB — {p}</th>'
+                f'<tr><th class="title" rowspan="2">FOB — {name}</th>'
                 + ''.join(f'<th class="sub{" gl" if i == 0 else ""}">{c["label"]}</th>' for i, c in enumerate(corridors))
                 + '<th class="sub gl">Best</th></tr>',
-                '<tr>' + ''.join(f'<td class="bidrow{" gl" if i == 0 else ""}">{c["bid"](p)}</td>' for i, c in enumerate(corridors))
+                '<tr>' + ''.join(f'<td class="bidrow{" gl" if i == 0 else ""}">{c["bid"](m)}</td>' for i, c in enumerate(corridors))
                 + '<td class="bidrow gl">bid</td></tr>']
+        rows_n = 0
         for state in states_all:
-            vals = [c["fob"](state, p) if state in c["states"] else None for c in corridors]
+            vals = [c["fob"](state, m) if state in c["states"] else None for c in corridors]
             if all(v is None for v in vals):
                 continue
+            rows_n += 1
             top = max(v for v in vals if v is not None)
             best_labels = [corridors[i]["label"] for i, v in enumerate(vals) if v is not None and v == top]
             tds = []
@@ -3287,20 +3295,27 @@ def _summary_tab(sel_date):
             html.append(f'<tr><td class="lbl">{state}</td>' + ''.join(tds) + f'<td class="fobv gl">{" / ".join(best_labels)}</td></tr>')
         html.append('</tbody></table>')
         table_html = ''.join(html)
-        st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
-        _table_actions(table_html, f"state_fob_summary_{re.sub(r'[^a-z0-9]+', '_', p.lower())}.png")
-    st.markdown('<div class="legend">¢/bu, bid − freight, negatives in parentheses; the yellow row is each corridor\'s bid for that period '
-                '(CN: the CIF NOLA price). Shaded = the best corridor for that state. — = no bid for that period on that corridor, or no '
-                'origin in the state. ' + " ".join(notes) + '</div>', unsafe_allow_html=True)
+        if rows_n:
+            st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+            _table_actions(table_html, f"state_fob_summary_{name.lower()}.png")
+        else:
+            st.caption(f"**{name}** — no corridor has a bid for this month yet.")
+    st.markdown('<div class="legend">¢/bu, bid − freight, negatives in parentheses; the yellow row is each corridor\'s bid for the month '
+                '(CN: the CIF NOLA price). * = not posted as that month on its own: a Split / FH+LH month, or the package that covers it '
+                '(JFM for Jan-Mar, AMJJ for Apr-Jul, ...). Shaded = the best corridor for that state. — = no bid for that month on that '
+                'corridor, or no origin in the state. ' + " ".join(notes) + '</div>', unsafe_allow_html=True)
 
 
-bids_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, refs_tab, ship_tab, carry_tab, summary_tab = st.tabs(
-    ["📋 Bids", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "🔗 References", "📦 Shipments", "💵 Net Carry", "📊 State Summary"])
+bids_tab, summary_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, refs_tab, ship_tab, carry_tab = st.tabs(
+    ["📋 Bids", "📊 State Summary", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "🔗 References", "📦 Shipments", "💵 Net Carry"])
 _diesel_weekly = _bn_auto_fsc()[1]
 
 with bids_tab:
     st.markdown("### Manual Rail Corridors (chat-fed)")
     _manual_date = _sheet_board("manual", MANUAL_SECTIONS, "man", other_keep=set())
+
+with summary_tab:
+    _summary_tab(_manual_date)
 
 with csx_tab:
     _csx_tab(_manual_date)
@@ -3331,9 +3346,6 @@ with refs_tab:
 with ship_tab:
     _shipments_tab()
 
-# New tabs go at the END: the railroad logos on tabs 2-5 are CSS-keyed to tab position (see the style block).
+# The railroad logos on tabs 3-6 are CSS-keyed to tab position (see the style block): a new tab shifts them.
 with carry_tab:
     _netcarry_tab()
-
-with summary_tab:
-    _summary_tab(_manual_date)

@@ -98,6 +98,33 @@ def bn_period_first_month(period):
     return found[0][1]
 
 
+_PKG_MONTHS = {"jfm": (1, 2, 3), "fma": (2, 3, 4), "mam": (3, 4, 5), "amj": (4, 5, 6), "mjj": (5, 6, 7), "jja": (6, 7, 8),
+               "jas": (7, 8, 9), "aso": (8, 9, 10), "son": (9, 10, 11), "ond": (10, 11, 12), "ndj": (11, 12, 1), "djf": (12, 1, 2),
+               "amjj": (4, 5, 6, 7), "am": (4, 5), "jj": (6, 7), "as": (8, 9), "fm": (2, 3)}
+
+
+def period_months(period):
+    """The whole calendar months (1-12) a bid period covers, or () if it names none: a month ("Nov" -> 11), a package
+    ("JFM" -> 1, 2, 3; "AMJJ" -> 4-7; "FM" -> 2, 3) or a range ("Jan July" / "OCT-MAR"). A half month (FH / LH Nov) or a Split
+    month covers its month only in part, so it returns () — callers handle those by name."""
+    p = period.strip().lower()
+    if re.match(r"^(fh|lh|mp|split)\b", p):
+        return ()
+    if p in _PKG_MONTHS:
+        return _PKG_MONTHS[p]
+    found = sorted((p.find(tok), m) for tok, m in _BN_MONTH3.items() if tok in p)
+    months = []
+    for _pos, m in found:
+        if m not in months:
+            months.append(m)
+    if len(months) == 1:
+        return (months[0],)
+    if len(months) >= 2:
+        a, b = months[0], months[1]
+        return tuple(((a - 1 + k) % 12) + 1 for k in range(((b - a) % 12) + 1))
+    return ()
+
+
 def bn_month_sort_key(month_key):
     """Calendar order for a seed-data month key (e.g. 'oct' -> 10), so
     callers can list an origin's published months in the right order
