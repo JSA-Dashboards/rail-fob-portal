@@ -18,7 +18,7 @@ RAILROADS = {
     "TPW": ("Toledo, Peoria & Western", "#0a9396", 2.4), "IAIS": ("Iowa Interstate", "#7b2cbf", 2.4),
     "WSOR": ("Watco: Wisconsin & Southern", "#2a9d8f", 2.2), "KO": ("Watco: Kansas & Oklahoma", "#8ab17d", 2.2),
 }
-DEFAULT_ON = ["CN", "TPW", "IAIS", "WSOR", "KO"]
+DEFAULT_ON = list(RAILROADS)
 # Grain rivers drawn as the highlighted system (NTAD river names)
 GRAIN_RIVERS = ["MISSISSIPPI RIVER", "ILLINOIS RIVER", "OHIO RIVER", "MISSOURI RIVER", "ARKANSAS RIVER", "TENNESSEE RIVER",
                 "CUMBERLAND RIVER", "KENTUCKY RIVER", "MONONGAHELA RIVER", "ALLEGHENY RIVER", "KANAWHA RIVER", "COLUMBIA RIVER",
