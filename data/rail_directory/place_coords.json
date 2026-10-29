@@ -1,0 +1,474 @@
+{
+"source": "U.S. Census Bureau TIGERweb (Census 2020 places, CDPs and county subdivisions), internal-point centroids, queried 2026-10-28",
+"note": "City / station centroids for the CN tariff origins and BNSF price-list origins that have no coordinates in the shippers directories. Approximate (town centre); keys are CITY|ST.",
+"rows": {
+"AKRON|MI": [
+43.5667,
+-83.5143
+],
+"ALDEN|IA": [
+42.5115,
+-93.3806
+],
+"ALTA|IA": [
+42.6717,
+-95.3045
+],
+"AMBOY|IN": [
+40.6016,
+-85.9272
+],
+"APLINGTON|IA": [
+42.5819,
+-92.8835
+],
+"ARCOLA|IL": [
+39.6833,
+-88.3014
+],
+"ASHKUM|IL": [
+40.8783,
+-87.9532
+],
+"AUBURN|MI": [
+43.6021,
+-84.0756
+],
+"AURELIA|IA": [
+42.7131,
+-95.4368
+],
+"BATTLE CREEK|MI": [
+42.2985,
+-85.2296
+],
+"BOSCOBEL|WI": [
+43.1437,
+-90.6949
+],
+"BRECKENRIDGE|MI": [
+43.4074,
+-84.4784
+],
+"BROWN CITY|MI": [
+43.2115,
+-82.9878
+],
+"BUFFALO LAKE|MN": [
+44.7368,
+-94.617
+],
+"CEDAR FALLS|IA": [
+42.5195,
+-92.4536
+],
+"CHAMPAIGN|IL": [
+40.1142,
+-88.2737
+],
+"CHEBANSE|IL": [
+41.0059,
+-87.9097
+],
+"CHENOA|IL": [
+40.7389,
+-88.726
+],
+"CHESANING|MI": [
+43.1851,
+-84.1201
+],
+"CHESTNUT|IL": [
+40.0537,
+-89.1871
+],
+"CHICAGO|IL": [
+41.837,
+-87.6849
+],
+"CHILTON|WI": [
+44.0293,
+-88.1625
+],
+"CLARA CITY|MN": [
+44.9577,
+-95.3671
+],
+"CLIFTON|IL": [
+40.9347,
+-87.9343
+],
+"CLINTON|IL": [
+40.1469,
+-88.9634
+],
+"COUNCIL BLUFFS|IA": [
+41.2368,
+-95.8519
+],
+"CRUGER|IL": [
+40.7038,
+-89.3026
+],
+"DALTON CITY|IL": [
+39.717,
+-88.807
+],
+"DELAVAN|IL": [
+40.371,
+-89.5461
+],
+"DODGE CITY|KS": [
+37.761,
+-100.0182
+],
+"DUBUQUE|IA": [
+42.5003,
+-90.707
+],
+"DUNKERTON|IA": [
+42.5679,
+-92.1609
+],
+"DURAND|MI": [
+42.9127,
+-83.9891
+],
+"DYERSBURG|TN": [
+36.0466,
+-89.3777
+],
+"EFFINGHAM|IL": [
+39.1205,
+-88.5509
+],
+"ELWIN|IL": [
+39.7762,
+-88.9776
+],
+"EMDEN|IL": [
+40.2982,
+-89.4851
+],
+"FALLS CITY|NE": [
+40.0623,
+-95.599
+],
+"FARINA|IL": [
+38.8301,
+-88.7796
+],
+"FONDA|IA": [
+42.5817,
+-94.8455
+],
+"FOREST CITY|IA": [
+43.2571,
+-93.6365
+],
+"FREEPORT|IL": [
+42.2892,
+-89.6347
+],
+"GALVA|IL": [
+41.1689,
+-90.0374
+],
+"GARDEN CITY|KS": [
+37.9752,
+-100.8526
+],
+"GARNER|IA": [
+43.1,
+-93.6031
+],
+"GIBSON CITY|IL": [
+40.4664,
+-88.3788
+],
+"GILFORD|MI": [
+43.5224,
+-83.6409
+],
+"GILMAN|IL": [
+40.7626,
+-87.9974
+],
+"GRAND FORKS|ND": [
+47.9214,
+-97.0884
+],
+"GREEN BAY|WI": [
+44.5207,
+-87.9855
+],
+"GREENE|IA": [
+42.8968,
+-92.8041
+],
+"HANLEY FALLS|MN": [
+44.6918,
+-95.6194
+],
+"HEMLOCK|MI": [
+43.4186,
+-84.2311
+],
+"HENDERSON|MI": [
+43.0872,
+-84.1933
+],
+"HERSCHER|IL": [
+41.0492,
+-88.1006
+],
+"HINTON|IA": [
+42.6212,
+-96.2976
+],
+"HOLCOMB|KS": [
+37.986,
+-100.9936
+],
+"IDA GROVE|IA": [
+42.3438,
+-95.4733
+],
+"INDEPENDENCE|IA": [
+42.4622,
+-91.9027
+],
+"ITHACA|MI": [
+43.2911,
+-84.5957
+],
+"KINDE|MI": [
+43.9405,
+-82.9963
+],
+"KNIERIM|IA": [
+42.4563,
+-94.4559
+],
+"KOKOMO|IN": [
+40.4639,
+-86.1277
+],
+"LOGANSPORT|IN": [
+40.7472,
+-86.352
+],
+"LONDON|MN": [
+43.5431,
+-93.1091
+],
+"LUXEMBURG|WI": [
+44.5447,
+-87.7065
+],
+"MANLY|IA": [
+43.2883,
+-93.2008
+],
+"MANSON|IA": [
+42.5286,
+-94.5401
+],
+"MARBLE ROCK|IA": [
+42.9647,
+-92.8682
+],
+"MARLETTE|MI": [
+43.3268,
+-83.0808
+],
+"MATTOON|IL": [
+39.4774,
+-88.3623
+],
+"MEMPHIS|TN": [
+35.1088,
+-89.9663
+],
+"MOUND CITY|IL": [
+37.0853,
+-89.1629
+],
+"NEOGA|IL": [
+39.3216,
+-88.4503
+],
+"NEW HARTFORD|IA": [
+42.5682,
+-92.6214
+],
+"NEW ORLEANS|LA": [
+30.0687,
+-89.9282
+],
+"OAKLAND|IL": [
+39.6575,
+-88.0277
+],
+"OAKLEY|MI": [
+43.1434,
+-84.1685
+],
+"OBLONG|IL": [
+39.0022,
+-87.9106
+],
+"OELWEIN|IA": [
+42.6715,
+-91.9131
+],
+"OSAGE|IA": [
+43.2827,
+-92.8113
+],
+"OSCEOLA|IA": [
+41.0304,
+-93.784
+],
+"PALESTINE|IL": [
+39.0016,
+-87.6126
+],
+"PARK RIVER|ND": [
+48.3911,
+-97.7427
+],
+"PAXTON|IL": [
+40.4563,
+-88.102
+],
+"PEORIA|IL": [
+40.7519,
+-89.6151
+],
+"PIGEON|MI": [
+43.8294,
+-83.2702
+],
+"PINCKNEYVILLE|IL": [
+38.085,
+-89.3719
+],
+"PLEASANT HILL|IA": [
+41.5867,
+-93.4952
+],
+"POMEROY|IA": [
+42.5519,
+-94.6779
+],
+"RANTOUL|IL": [
+40.3031,
+-88.1549
+],
+"RED CLOUD|NE": [
+40.0864,
+-98.5222
+],
+"ROSEBUSH|MI": [
+43.6998,
+-84.7657
+],
+"SAGINAW|MI": [
+43.4199,
+-83.9501
+],
+"SAINT ANSGAR|IA": [
+43.3799,
+-92.9178
+],
+"SEWARD|IL": [
+42.2458,
+-89.3387
+],
+"SHAWANO|WI": [
+44.7748,
+-88.5843
+],
+"SHEPHERD|MI": [
+43.5236,
+-84.6927
+],
+"SLINGER|WI": [
+43.3318,
+-88.2798
+],
+"SOUTH SIOUX CITY|NE": [
+42.4629,
+-96.4127
+],
+"SPLIT ROCK|MN": [
+46.4628,
+-92.9915
+],
+"STACYVILLE|IA": [
+43.4392,
+-92.7841
+],
+"STERLING|KS": [
+38.2094,
+-98.2064
+],
+"STOCKTON|WI": [
+44.4892,
+-89.4229
+],
+"TERRE HAUTE|IN": [
+39.466,
+-87.3751
+],
+"THOMASBORO|IL": [
+40.2439,
+-88.1877
+],
+"TOETERVILLE|IA": [
+43.44,
+-92.8879
+],
+"TUSCOLA|IL": [
+39.7968,
+-88.275
+],
+"UNION CITY|TN": [
+36.4267,
+-89.0474
+],
+"VINTON|IA": [
+42.1632,
+-92.026
+],
+"WALNUT GROVE|MN": [
+44.225,
+-95.4692
+],
+"WARREN|IL": [
+42.4948,
+-89.9912
+],
+"WATSON|IL": [
+39.0261,
+-88.5686
+],
+"WILLOW HILL|IL": [
+38.9958,
+-88.0218
+],
+"WISCONSIN RAPIDS|WI": [
+44.3927,
+-89.8265
+],
+"WORTHING|SD": [
+43.33,
+-96.7682
+],
+"YETTER|IA": [
+42.3161,
+-94.8432
+]
+}
+}

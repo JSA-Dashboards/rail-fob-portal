@@ -75,6 +75,12 @@ def _load(name):
         return json.load(f)
 
 
+def place_coords():
+    """{'CITY|ST': (lat, lon)} — Census centroids for stations the shippers directory has no coordinates for
+    (data/rail_directory/place_coords.json; also the CN tariff origins, cn_miles.py)."""
+    return {k: tuple(v) for k, v in _load("place_coords.json")["rows"].items()}
+
+
 def station_coords(shippers):
     """{(station key, state): (lat, lon)} — the mean of the elevators on that station, where the directory has coordinates."""
     acc = {}
@@ -119,11 +125,15 @@ def origins(seed_origins, adder=None, rates=None, shippers=None):
     if adder is None:
         adder = hereford_adder(seed_origins, listed)
     coords = station_coords(shippers["rows"] if isinstance(shippers, dict) else shippers)
+    places = place_coords()
     seeded = {norm(o["origin"]): o for o in seed_origins}
     out = {}
     for name in sorted(set(listed) | set(seeded)):
         city, st = _split(name)
         xy = coords.get((_station_key(city), st))
+        from_place = xy is None and f"{city}|{st}" in places
+        if from_place:
+            xy = places[f"{city}|{st}"]
         row = {"name": name, "state": st, "coords": xy, "seeded": name in seeded, "off_box": False}
         if name in seeded:
             o = seeded[name]
@@ -139,8 +149,9 @@ def origins(seed_origins, adder=None, rates=None, shippers=None):
                 row["pnw_miles"] = estimate_miles("pnw", *xy)
                 row["herf_miles"] = estimate_miles("hereford", *xy)
                 row["off_box"] = not in_calibration(*xy)
-                row["miles_note"] = "estimated from the BNSF directory's coordinates"
+                row["miles_note"] = ("estimated from the town's coordinates" if from_place
+                                     else "estimated from the BNSF directory's coordinates")
             else:
-                row["miles_note"] = "no coordinates in the BNSF directory"
+                row["miles_note"] = "no coordinates for this station"
         out[name] = row
     return out

@@ -57,8 +57,20 @@ The freight sheet only has 13 origins with face rates and lane miles; for the re
 miles = a + b × great-circle miles to a fixed point (PNW: Spokane; Hereford: a point in southern Kansas, since the lane runs through Kansas and a straight line to Hereford, TX fits far worse), constants fitted to the 13 seeded origins (`LANES`;
 RMS ~65–70 miles ≈ 1¢/bu; the test refits it). Origins outside the fitted area (`CAL_BOX`, about MN/SD/NE/IA/IL) get a rougher-estimate warning; origins with no coordinates in the directory (24) show "—" until miles are typed; a typed mileage wins.
 Seeded origins use the sheet's own rates and miles. `freight_data.bn_build_row` is the shared freight build (a lane with no rate or miles has no freight). The shippers directory abbreviates stations to 9 characters — `bn_locator._station_key`.
-The CN tab has **FOB at Any CN Location** the same way (`_cn_location_lookup`): one tariff origin from a dropdown, all its volume tiers; CN's tariff rates are flat $/car, so no miles. CN's FSC (mileage-based, `rail_fsc`) is NOT in the CN freight yet — the estimator could supply its miles if it is added.
+The CN tab has **FOB at Any CN Location** the same way (`_cn_location_lookup`): one tariff origin from a dropdown, all its volume tiers; CN's tariff rates are flat $/car; its fuel surcharge (below) is what needs miles.
 29 of the CN shipper directory's 96 locations (e.g. Kankakee, Heyworth) have no rate of their own in the tariff and aren't offered.
+
+## CN fuel surcharge (2026-10-28) — `cn_miles.py`, `rail_fsc.window`, `tests/test_cn_miles.py`
+
+CN freight = tariff $/car + **CN 7403 fuel surcharge** ($/car-mile, `rail_fsc.PROGRAMS["CN"]`) × the origin's rail miles to the Gulf; ÷ bu/car for ¢/bu. The CN tab has an "Include CN fuel surcharge" checkbox (default on; off = the earlier tariff-only numbers).
+That the surcharge is ADDED to the tariff comes from USDA AMS's Grain Transportation Report tables (Table 7, CN Gibson City, IL → Reserve, LA): Oct 22 2026 $3,011 tariff + $718 fuel; Sept 24 $2,791 + $605. $718 / CN's Oct bulk $0.7303 = $605 / Sept $0.6153 = **983 miles** —
+the only real mileage there is (`ANCHOR_MILES`; CN's own Get Rail Miles tool needs an eBusiness login). The per-month $/mile is `rail_fsc.window("CN", weekly, today)`: CN-PUBLISHED values (`PROGRAMS["CN"]["published"]` — add each new month CN posts) win, else the formula on EIA diesel,
+else the last published held flat. Periods map to a month by their first named month (`FD.bn_period_first_month`; "FM" → Feb was added).
+**Miles are estimated** (`cn_miles.miles_to_gulf`): Champaign ≈ Gibson City's 983 (editable on the tab); origins in IA/WI/MI/MN go via Chicago (1.25 × great-circle to Chicago + 136 + Champaign's); others sit on the Illinois Central line (Champaign's ± 1.10 × great-circle to Champaign, + north / − south).
+The circuity factors are judgement — not fitted, there is one data point — roughly 10-15% of the distance from Champaign; local-move origins far south (New Orleans, Memphis) are the least reliable. Coordinates are Census TIGERweb centroids in `data/rail_directory/place_coords.json`
+(117 places, queried 2026-10-28; also fills BN price-list origins the shippers directory lacks); 15 CN tariff stations (sidings: Lis, Doran, Coles, ...) have none → "—" and named in the legend until miles are typed in FOB at Any CN Location.
+**Against the CN 105s Beans bids (FOB Champaign) the Champaign mileage cancels** — FOB(origin) = bid + freight(Champaign) − freight(origin), so the fuel surcharge enters as FSC × (Champaign miles − origin miles) and only the DIFFERENCE in miles matters (Kolten's point); the absolute 983 only matters for the CIF NOLA netback or a typed mileage.
+Open: GTR's CN Gibson City tariff ($3,011 Oct–Nov; Dec 2025–Aug 2026 $2,681; Sept $2,791) is higher than Supplement 41's Gibson City 105+ rate ($2,287) — check which supplement / period the seed's rates are, since the tariff steps by month and this tab holds one set of rates for all periods.
 
 ## Railroad reference (2026-10-28) — `rail_reference.py`, `rail_fsc.py`, `data/rail_directory/`
 

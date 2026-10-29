@@ -107,3 +107,23 @@ def equation(rr):
 def table(rr, weekly, today):
     """The BN-style month grid ({key: {fsc, kind, basis, year, month}}) under this railroad's program."""
     return BNF.auto_table(weekly, today, lambda price: fsc(rr, price))
+
+
+def window(rr, weekly, today):
+    """{month key: {fsc, kind}} for the Oct..Sep grid: the value the railroad has PUBLISHED where it has one, else the
+    program's formula on EIA diesel (months past the diesel data hold the latest weekly price flat), else — with no diesel
+    data — the last published value held flat. kind: 'published' | 'formula' | 'held'. {} when there is nothing to go on."""
+    pub = PROGRAMS[rr]["published"]
+    tbl = table(rr, weekly, today) if weekly else {}
+    out, last = {}, None
+    for key, y, m in BNF.grid_months(today):
+        known = pub.get(f"{y}-{m:02d}")
+        if known is not None:
+            out[key] = {"fsc": known, "kind": "published"}
+        elif key in tbl:
+            out[key] = {"fsc": tbl[key]["fsc"], "kind": "formula"}
+        elif last is not None:
+            out[key] = {"fsc": last, "kind": "held"}
+        if key in out:
+            last = out[key]["fsc"]
+    return out

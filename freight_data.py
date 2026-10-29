@@ -76,7 +76,7 @@ _BN_MONTH3 = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
 _BN_MONTH3_REV = {v: k for k, v in _BN_MONTH3.items()}
 _BN_PACKAGES = {"jfm": 1, "fma": 2, "mam": 3, "amj": 4, "mjj": 5, "jja": 6,
                  "jas": 7, "aso": 8, "son": 9, "ond": 10, "ndj": 11, "djf": 12,
-                 "amjj": 4, "am": 4, "jj": 6, "as": 8}
+                 "amjj": 4, "am": 4, "jj": 6, "as": 8, "fm": 2}
 
 
 def bn_period_first_month(period):
@@ -286,6 +286,7 @@ CN_COMMODITIES = ["Corn", "Soybeans"]
 CN_LB_PER_BU = {"Corn": 56, "Soybeans": 60}
 
 
-def cn_freight_cpb(rate, size, commodity="Corn"):
-    """$/car -> ¢/bu for CN's freight, given a car size and commodity."""
-    return rate / CN_BU_PER_CAR[commodity][size] * 100
+def cn_freight_cpb(rate, size, commodity="Corn", extra=0.0):
+    """$/car -> ¢/bu for CN's freight, given a car size and commodity. `extra` is more $/car on top of the tariff rate
+    (the fuel surcharge: $/mile x miles, cn_miles.py)."""
+    return (rate + extra) / CN_BU_PER_CAR[commodity][size] * 100
