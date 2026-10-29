@@ -100,6 +100,10 @@ EXTRA_ETHANOL = [
 # Oct 2026. Capacity is the lower end of the reported range; figures are from press coverage Kolten supplied, not company filings.
 UPDATES = [
     {"match": ("Incobrasa", "Gilman", "IL"), "set": {"mbu": 98.0, "note": "Expanded June 2026: ~43 to ~98 M bu/yr (list had 36); biodiesel 75 to 170 M gal/yr Oct 2026"}},
+    # plants the list still shows as Build that Kolten says are live (10-29)
+    {"match": ("SDSP", "Mitchell", "SD"), "set": {"status": "Run", "note": "Now live (list had Build)"}},
+    {"match": ("Ag Processing", "David City", "NE"), "set": {"status": "Run", "note": "Now live (list had Build)"}},
+    {"match": ("Louis Dreyfus", "Upper Sandusky", "OH"), "set": {"status": "Run", "note": "Now live (list had Build)"}},
 ]
 
 
