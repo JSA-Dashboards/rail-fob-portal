@@ -32,10 +32,18 @@ def _load(name):
         return json.load(fh)
 
 
-def _line_xy(paths):
+def _line_xy(paths, step=0.1):
+    """Paths as one None-separated line. With `step`, long straight stretches get extra points so a hover (which only
+    fires on a vertex) finds the line wherever the mouse is on it."""
     lon, lat = [], []
     for p in paths:
-        for x, y in p:
+        for i, (x, y) in enumerate(p):
+            if step and i:
+                px, py = p[i - 1]
+                n = int(max(abs(x - px), abs(y - py)) / step)
+                for k in range(1, n + 1):
+                    lon.append(round(px + (x - px) * k / (n + 1), 3))
+                    lat.append(round(py + (y - py) * k / (n + 1), 3))
             lon.append(x)
             lat.append(y)
         lon.append(None)
@@ -51,11 +59,12 @@ def build_figure(rails, rivers, show_crush, show_ethanol, shipper_roads, height=
         paths = [p for r in GRAIN_RIVERS for p in water.get(r, [])]
         lon, lat = _line_xy(paths)
         fig.add_trace(go.Scattermap(lon=lon, lat=lat, mode="lines", line=dict(width=4, color="#4aa3ff"), name="Grain rivers",
-                                    hoverinfo="skip", opacity=0.75))
+                                    hovertemplate="Grain rivers<extra></extra>", opacity=0.75))
     for code in rails:
         label, color, width = RAILROADS[code]
         lon, lat = _line_xy(lines.get(code, []))
-        fig.add_trace(go.Scattermap(lon=lon, lat=lat, mode="lines", line=dict(width=width, color=color), name=label, hoverinfo="skip"))
+        fig.add_trace(go.Scattermap(lon=lon, lat=lat, mode="lines", line=dict(width=width, color=color), name=label,
+                                    hovertemplate="%{fullData.name}<extra></extra>"))
     pts = _load("map_points.json")
     for road in shipper_roads:
         rows = [r for r in pts["shipper"] if r["road"] == road]
