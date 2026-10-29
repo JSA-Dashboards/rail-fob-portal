@@ -1078,6 +1078,9 @@ def _ns_tab(sel_date):
         return
     fsc_on = st.checkbox("Include NS fuel surcharge (\\$ per car-mile on the extra rail miles vs Ft Wayne)", value=True,
                          key="ns_fsc_on")
+    only105 = st.checkbox("State index: 105-car origins only (the workbook's \"105?\" column)", value=True, key="ns_idx_105",
+                          help="The state index takes each state's best origin. Without this, small sidings that can't load a 105-car "
+                               "train (and aren't in NS's grain loader directory, e.g. Browns, IL) can set a state's number.")
     rows = FD.load_ns()
 
     ftw_cells, ftw_eff = _bid_cells_for("manual", FD.NS_BID_MARKET, sel_date)
@@ -1095,7 +1098,8 @@ def _ns_tab(sel_date):
     st.markdown("### FOB Index by State")
     variant_fields = [(region, fns[field]) for region, field in active]
     bid_cells_map = {region: ftw_cells for region, _ in active}
-    _state_fob_table(rows, variant_fields, bid_cells_map, periods, name="ns_state_index")
+    idx_rows = [r for r in rows if r["flag_105"]] if only105 else rows
+    _state_fob_table(idx_rows, variant_fields, bid_cells_map, periods, name="ns_state_index")
 
     st.markdown("### Highlighted Origins")
     if ftw_eff and ftw_eff != sel_date:
@@ -1131,7 +1135,7 @@ def _ns_tab(sel_date):
         '<div class="legend">FOB(origin) = bid at NS Ft Wayne − rail freight (¢/bu, '
         'already $/bu in the source workbook × 100) − NS fuel surcharge on the estimated extra rail miles vs Ft Wayne '
         '(\\$/car-mile ÷ 3500 bu/car × 100; the miles are great-circle distance to a representative town in each region '
-        '× 1.25, rough). GA / NC-SC-VA / East are three '
+        '× 1.10, rough). GA / NC-SC-VA / East are three '
         'published through-rate variants against the same physical move, all pricing '
         'off the same bid — so Highlighted Origins shows the cheapest-freight '
         'region among whichever are checked above for each period, not all three; see FOB at Any NS Location or the expander '
@@ -1887,17 +1891,7 @@ def _cn_tab(sel_date):
 
     fsc_on = st.checkbox("Include CN fuel surcharge (CN 7403 — \\$ per car-mile on the miles to the Gulf)", value=True,
                          key="cn_fsc_on")
-    champ_miles = CM.CHAMPAIGN_MILES
-    if fsc_on:
-        champ_miles = st.number_input("Champaign → Gulf rail miles", min_value=0, step=10, value=CM.CHAMPAIGN_MILES,
-                                      key="cn_champ_miles",
-                                      help="About 33 miles south of Gibson City's 870 (USDA's route miles, Gibson City to Reserve, LA). "
-                                           "Other origins are this plus their estimated distance from Champaign; against a "
-                                           "bid FOB Champaign it cancels, and only the difference in miles is charged.")
-    uplift_override = st.number_input("CN tariff level — override ($/car added to every tariff rate)", step=25, value=None,
-                                      placeholder="USDA monthly level", key="cn_uplift",
-                                      help="Blank = each period's CN tariff level from USDA's monthly series for Gibson City, as a flat $/car on "
-                                           "every origin. Type a number to use that for every period instead (0 = the seed's rates as is).")
+    champ_miles = CM.CHAMPAIGN_MILES            # fixed: USDA's 870 for Gibson City, less ~33 (cn_miles.py)
     uplift_by_m = {}
     fsc_by_m = {}
     make_freight = _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift_by_m)
@@ -1949,10 +1943,7 @@ def _cn_tab(sel_date):
     tariff_bits = []
     for m in months:
         mo = FD.bn_period_first_month(m)
-        if uplift_override is not None:
-            uplift_by_m[m] = uplift_override
-            tariff_bits.append(f"{m} {uplift_override:+,.0f}")
-        elif mo:
+        if mo:
             level, kind = FD.cn_tariff_level(mo, date.today())
             uplift_by_m[m] = 0 if level is None else level - seed_level
             tariff_bits.append(f"{m} {uplift_by_m[m]:+,.0f} (" + ("USDA actual" if kind == "actual" else "USDA's same month last year"

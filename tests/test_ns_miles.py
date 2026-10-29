@@ -19,7 +19,7 @@ assert NSM.delta_miles("ANDERSON", "IN", "ga") < 0 and NSM.delta_miles("TOLEDO",
 assert NSM.delta_miles("DYER", "OH", "ga") == NSM.delta_miles("FOSTORIA", "OH", "ga") is not None
 # only a station we cannot place lacks miles
 missing = [(r["origin"], r["state"]) for r in rows if NSM.delta_miles(r["origin"], r["state"], "ga") is None]
-assert missing == [("WTNN", "TN")], missing
+assert missing == [], missing                      # WTNN borrows Jackson TN (the West Tennessee Railroad is based there)
 # the seed's spreads track the miles difference (that is the check that they are spreads to Ft Wayne)
 for f in NSM.DEST:
     pts = [(NSM.delta_miles(r["origin"], r["state"], f), r[f] * 3500) for r in rows if NSM.delta_miles(r["origin"], r["state"], f) is not None]
