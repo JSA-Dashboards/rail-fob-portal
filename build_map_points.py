@@ -72,6 +72,29 @@ def _load(path):
         return json.load(fh)
 
 
+# Plants the lists don't carry. CHS Evansville WI: $700M, ~80M bu/yr soybean crush, announced 2023 (70M bu then), completion targeted
+# fall 2028 (AgWeb); tagged Proposed as Kolten asked. Canadian plants near the US border are from the soy-crush-calculator's Ontario
+# list (ontario.NODES) and COPA's July 2026 plant map (oilseed-crush-margins/data/canola_plants.csv): ethanol capacity is the corn
+# use those sources quote (M bu/yr); COPA lists no crush capacities.
+EXTRA_CRUSH = [
+    {"name": "CHS Inc. (Evansville, WI plant)", "state": "WI", "city": "Evansville", "status": "Proposed", "lat": 42.778, "lon": -89.299, "mbu": 80.0},
+    {"name": "ADM", "state": "ON", "city": "Windsor", "status": "Run", "lat": 42.30, "lon": -83.03, "country": "CA"},
+    {"name": "Bunge", "state": "ON", "city": "Hamilton", "status": "Run", "lat": 43.26, "lon": -79.87, "country": "CA"},
+    {"name": "Bunge", "state": "QC", "city": "Becancour", "status": "Run", "lat": 46.36, "lon": -72.43, "country": "CA"},
+    {"name": "Bunge", "state": "MB", "city": "Altona", "status": "Run", "lat": 49.10, "lon": -97.56, "country": "CA"},
+    {"name": "Bunge", "state": "MB", "city": "Ste. Agathe", "status": "Run", "lat": 49.57, "lon": -97.17, "country": "CA"},
+    {"name": "Bunge", "state": "MB", "city": "Harrowby", "status": "Run", "lat": 50.30, "lon": -101.20, "country": "CA"},
+    {"name": "Cargill", "state": "SK", "city": "Regina", "status": "Run", "lat": 50.45, "lon": -104.61, "country": "CA"},
+    {"name": "Richardson", "state": "AB", "city": "Lethbridge", "status": "Run", "lat": 49.69, "lon": -112.84, "country": "CA"},
+]
+EXTRA_ETHANOL = [
+    {"name": "Suncor St. Clair", "state": "ON", "city": "Mooretown", "status": "Run", "lat": 42.8945, "lon": -82.4736, "mbu": 40.0, "country": "CA"},
+    {"name": "IGPC Ethanol", "state": "ON", "city": "Aylmer", "status": "Run", "lat": 42.7686, "lon": -80.9831, "mbu": 15.0, "country": "CA"},
+    {"name": "Greenfield Global", "state": "ON", "city": "Chatham", "status": "Run", "lat": 42.4048, "lon": -82.1910, "country": "CA"},
+    {"name": "Greenfield Global", "state": "ON", "city": "Johnstown", "status": "Run", "lat": 44.7253, "lon": -75.4936, "mbu": 20.0, "country": "CA"},
+]
+
+
 def main():
     pts = {"crush": [], "ethanol": [], "shipper": []}
     gaz = _gazetteer()
@@ -83,6 +106,8 @@ def main():
     cr = pd.read_excel(CRUSH_XLSX, sheet_name=0)
     for _, r in cr.iterrows():
         _add(pts["crush"], gaz, miss, r["COMPANY"], r["ST"], r["CITY"], r.get("STATUS"), mbu=_num(r.get("ANNUAL CAPACITY"), 1e6))
+    pts["crush"].extend(EXTRA_CRUSH)
+    pts["ethanol"].extend(EXTRA_ETHANOL)
     place = _load(os.path.join(DIR, "place_coords.json"))["rows"]
     for r in _load(os.path.join(DIR, "bnsf_shippers.json"))["rows"]:
         if r.get("lat") is not None and r.get("state") not in ("AB", "SK", "MB", "BC"):
