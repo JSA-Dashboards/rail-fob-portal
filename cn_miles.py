@@ -35,7 +35,9 @@ C_DIRECT = 1.10
 EST_NOTE = "estimated from the town's coordinates"
 
 # Sidings that load at / are served from a town (Kolten, 2026-10-28): measured from that town.
-ALIASES = {("COLES", "IL"): ("MATTOON", "IL"), ("DORANS", "IL"): ("MATTOON", "IL"), ("CLYMERS", "IN"): ("LOGANSPORT", "IN")}
+ALIASES = {("COLES", "IL"): ("MATTOON", "IL"), ("DORANS", "IL"): ("MATTOON", "IL"), ("CLYMERS", "IN"): ("LOGANSPORT", "IN"),
+           ("COCKRELL", "IL"): ("MATTOON", "IL"), ("GREEN'S SWITCH", "IL"): ("MATTOON", "IL"),     # Kolten, 2026-10-28: "just use Mattoon"
+           ("INDIAN OAKS", "IL"): ("MATTOON", "IL")}
 
 
 def coords(origin, state):
