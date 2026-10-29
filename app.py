@@ -3151,7 +3151,7 @@ def _month_quote(cells, month):
     return None
 
 
-def _summary_corridors(sel_date, months):
+def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
     """The corridors the State Summary compares, for `months` = [(1-12, 'Nov'), ...]: [{label, bid(m) -> text, fob(state, m) -> ¢/bu
     | None, states}] and the footnotes. Each value is the corridor's STATE INDEX — the best (highest) FOB among that state's
     origins — built from the same freight, fuel surcharge and bids as the railroad's own tab, with each corridor's bid resolved to
@@ -3224,39 +3224,70 @@ def _summary_corridors(sel_date, months):
     notes.append("BN: every BNSF location in the state (the sheet's 13 plus the price list's, with estimated miles), freight and fuel "
                  "surcharge for that month.")
 
-    # ---- CN: corn vs CIF NOLA, 105+ car, large railroad car, with fuel surcharge and the USDA tariff level
-    try:
-        cif = RVD.latest_cif("Corn")[1] if RVD.configured() else {}
-    except Exception:
-        cif = {}
-    if cif:
-        cn = [r for r in FD.load_cn() if r["tier"] == FD.CN_VOLUME_TIER_ORDER[-1]]
-        fsc_win = RF.window("CN", _diesel_weekly, date.today())
-        seed_level = FD.cn_seed_level()
-        field = FD.CN_RATE_FIELD[("Large", "Railroad")]
+    # ---- CN: 105+ car shuttle origins, large railroad cars, the USDA tariff level plus the fuel surcharge on estimated miles —
+    # either the CN 105s corn bids (FOB Champaign: bid + freight(Champaign) - freight(origin), like the CN tab's bean bids) or a
+    # corn netback from the CIF NOLA curve
+    cn = [r for r in FD.load_cn() if r["tier"] == FD.CN_VOLUME_TIER_ORDER[-1]]
+    fsc_win = RF.window("CN", _diesel_weekly, date.today())
+    seed_level = FD.cn_seed_level()
+    cn_field = FD.CN_RATE_FIELD[("Large", "Railroad")]
+
+    def cn_freight(r, m, miles):
+        """¢/bu for one tariff row in month m (1-12): tariff + USDA level + fuel surcharge x miles; None where unknown."""
+        level, _k = FD.cn_tariff_level(m, date.today())
+        fsc = (fsc_win.get(FD._BN_MONTH3_REV[m]) or {}).get("fsc")
+        if fsc is None or miles is None:
+            return None
+        return FD.cn_freight_cpb(r[cn_field], "Large", "Corn", (0 if level is None else level - seed_level) + fsc * miles)
+
+    champ = next((r for r in cn if r["origin"] == "CHAMPAIGN" and r["state"] == "IL"), None)
+    cn_cells = _bid_cells_for("manual", "CN 105s", sel_date)[0]
+    if cn_src.startswith("CN 105s") and cn_cells and champ is not None:
+        quotes = {m: _month_quote(cn_cells, m) for m, _l in months}
 
         def cn_fob(state, m):
-            price = cif.get(labels[m])
-            if price is None:
+            q = quotes.get(m)
+            f_champ = cn_freight(champ, m, CM.CHAMPAIGN_MILES) if q else None
+            if f_champ is None:
                 return None
-            level, _k = FD.cn_tariff_level(m, date.today())
-            extra = 0 if level is None else level - seed_level
-            fsc = (fsc_win.get(FD._BN_MONTH3_REV[m]) or {}).get("fsc")
             vals = []
             for r in cn:
                 if r["state"] != state:
                     continue
-                miles = CM.miles_to_gulf(r["origin"], r["state"])[0]
-                if fsc is None or miles is None:
-                    continue
-                vals.append(price - FD.cn_freight_cpb(r[field], "Large", "Corn", extra + fsc * miles))
+                f = cn_freight(r, m, CM.miles_to_gulf(r["origin"], r["state"])[0])
+                if f is not None:
+                    vals.append(q[0] + f_champ - f)
             return max(vals) if vals else None
-        corridors.append({"label": "CN Gulf (CIF NOLA)", "bid": lambda m: "—" if cif.get(labels[m]) is None else f"{cif[labels[m]]:+.0f}",
-                          "fob": cn_fob, "states": {r["state"] for r in cn}})
-        notes.append("CN: corn netted back from the CIF NOLA curve (River FOB Portal), 105+ car shuttle origins, large railroad cars, tariff at "
-                     "USDA's level for the month plus CN's fuel surcharge on estimated miles.")
+        corridors.append({"label": "CN 105s (FOB Champaign)", "bid": lambda m: bid_text(quotes.get(m)), "fob": cn_fob,
+                          "states": {r["state"] for r in cn}})
+        notes.append("CN: the CN 105s corn bid (FOB Champaign) carried to each origin by the freight difference — 105+ car shuttle origins, large "
+                     "railroad cars, tariff at USDA's level plus CN's fuel surcharge on estimated miles.")
     else:
-        notes.append("CN: left out — no CIF NOLA corn curve (the River FOB Portal's database isn't reachable from here).")
+        try:
+            cif = RVD.latest_cif("Corn")[1] if RVD.configured() else {}
+        except Exception:
+            cif = {}
+        if cif:
+            def cn_fob(state, m):
+                price = cif.get(labels[m])
+                if price is None:
+                    return None
+                vals = []
+                for r in cn:
+                    if r["state"] != state:
+                        continue
+                    f = cn_freight(r, m, CM.miles_to_gulf(r["origin"], r["state"])[0])
+                    if f is not None:
+                        vals.append(price - f)
+                return max(vals) if vals else None
+            corridors.append({"label": "CN Gulf (CIF NOLA)",
+                              "bid": lambda m: "—" if cif.get(labels[m]) is None else f"{cif[labels[m]]:+.0f}",
+                              "fob": cn_fob, "states": {r["state"] for r in cn}})
+            why = "" if cn_src.startswith("CIF") else " (no CN 105s bids on or before this posting date, so the CIF NOLA netback is shown)"
+            notes.append("CN: corn netted back from the CIF NOLA curve (River FOB Portal), 105+ car shuttle origins, large railroad cars, tariff at "
+                         "USDA's level plus CN's fuel surcharge on estimated miles" + why + ".")
+        else:
+            notes.append("CN: left out — no CN 105s bids and no CIF NOLA corn curve reachable.")
     notes.append("UP isn't here: its corridor bids are on the Bids tab and there is no state freight table for it.")
     return corridors, notes
 
@@ -3270,7 +3301,10 @@ def _summary_tab(sel_date):
     today = date.today()
     first = today.month if include_current else today.month % 12 + 1
     months = [(((first - 1 + k) % 12) + 1, calendar.month_abbr[((first - 1 + k) % 12) + 1]) for k in range(5)]
-    corridors, notes = _summary_corridors(sel_date, months)
+    cn_src = st.radio("CN price", ["CN 105s bids", "CIF NOLA netback"], horizontal=True, key="sum_cn_src",
+                      help="CN 105s bids: the CN 105s corn bid (FOB Champaign) carried to each origin by the freight difference. "
+                           "CIF NOLA netback: the River FOB Portal's CIF NOLA corn price less each origin's full freight.")
+    corridors, notes = _summary_corridors(sel_date, months, cn_src)
     states_all = sorted({s_ for c in corridors for s_ in c["states"]})
     for m, name in months:
         html = ['<table class="sheet"><tbody>',
