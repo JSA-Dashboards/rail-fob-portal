@@ -104,6 +104,11 @@ UPDATES = [
     {"match": ("SDSP", "Mitchell", "SD"), "set": {"status": "Run", "note": "Now live (list had Build)"}},
     {"match": ("Ag Processing", "David City", "NE"), "set": {"status": "Run", "note": "Now live (list had Build)"}},
     {"match": ("Louis Dreyfus", "Upper Sandusky", "OH"), "set": {"status": "Run", "note": "Now live (list had Build)"}},
+    {"match": ("WSBCP", "Waupun", "WI"), "set": {"status": "Run", "note": "Now live (list had Proposed)"}},
+    # no longer proposed (Kolten, 10-29): kept in the data as Cancelled, which draws with the closed plants (off by default)
+    {"match": ("Moberly", "Moberly", "MO"), "set": {"status": "Cancelled", "note": "No longer proposed"}},
+    {"match": ("St. Lawrence Soyway", "Massena", "NY"), "set": {"status": "Cancelled", "note": "No longer proposed"}},
+    {"match": ("Green Plains", "Obion", "TN"), "set": {"status": "Cancelled", "note": "No longer proposed"}},
 ]
 
 
