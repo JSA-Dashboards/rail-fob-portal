@@ -95,6 +95,14 @@ EXTRA_ETHANOL = [
 ]
 
 
+# Changes since the plant lists were made. Incobrasa Gilman IL: ~$250M expansion opened June 22 2026 (the crush list still has 36M bu;
+# reports cite ~43M bu before and ~98-100M after, one ~300,000 bu/day extraction line, TPW rail loop), biodiesel 75 -> 170M gal in early
+# Oct 2026. Capacity is the lower end of the reported range; figures are from press coverage Kolten supplied, not company filings.
+UPDATES = [
+    {"match": ("Incobrasa", "Gilman", "IL"), "set": {"mbu": 98.0, "note": "Expanded June 2026: ~43 to ~98 M bu/yr (list had 36); biodiesel 75 to 170 M gal/yr Oct 2026"}},
+]
+
+
 def main():
     pts = {"crush": [], "ethanol": [], "shipper": []}
     gaz = _gazetteer()
@@ -108,6 +116,12 @@ def main():
         _add(pts["crush"], gaz, miss, r["COMPANY"], r["ST"], r["CITY"], r.get("STATUS"), mbu=_num(r.get("ANNUAL CAPACITY"), 1e6))
     pts["crush"].extend(EXTRA_CRUSH)
     pts["ethanol"].extend(EXTRA_ETHANOL)
+    for u in UPDATES:
+        name, city, st = u["match"]
+        hit = [r for k in ("crush", "ethanol") for r in pts[k] if name.lower() in r["name"].lower() and r["city"] == city and r["state"] == st]
+        assert hit, f"update matched nothing: {u['match']}"
+        for r in hit:
+            r.update(u["set"])
     place = _load(os.path.join(DIR, "place_coords.json"))["rows"]
     for r in _load(os.path.join(DIR, "bnsf_shippers.json"))["rows"]:
         if r.get("lat") is not None and r.get("state") not in ("AB", "SK", "MB", "BC"):
