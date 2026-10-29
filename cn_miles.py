@@ -33,8 +33,13 @@ C_CHICAGO = 1.25
 C_DIRECT = 1.10
 EST_NOTE = "estimated from the town's coordinates"
 
+# Sidings that load at / are served from a town (Kolten, 2026-10-28): measured from that town.
+ALIASES = {("COLES", "IL"): ("MATTOON", "IL"), ("DORANS", "IL"): ("MATTOON", "IL"), ("CLYMERS", "IN"): ("LOGANSPORT", "IN")}
+
+
 def coords(origin, state):
-    return BL.place_coords().get(f"{origin.upper()}|{state}")
+    origin, state = ALIASES.get((origin.upper(), state), (origin.upper(), state))
+    return BL.place_coords().get(f"{origin}|{state}")
 
 
 def delta_miles(origin, state):
@@ -59,4 +64,5 @@ def miles_to_gulf(origin, state, champaign_miles=CHAMPAIGN_MILES):
     d = delta_miles(origin, state)
     if d is None:
         return None, "no coordinates for this station"
-    return champaign_miles + d, EST_NOTE
+    alias = ALIASES.get((origin.upper(), state))
+    return champaign_miles + d, (f"measured from {alias[0].title()}, {alias[1]}" if alias else EST_NOTE)

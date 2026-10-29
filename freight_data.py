@@ -47,6 +47,12 @@ NS_REGIONS = {
     "East":      "east",
 }
 NS_BID_MARKET = "NS Ft Wayne"
+NS_BU_PER_CAR = 3500        # for the fuel surcharge's $/car -> ¢/bu (the same car the CSX workbook uses; NS's isn't stated)
+
+
+def fsc_cpb(fsc_per_mile, miles, bu_per_car):
+    """A $/car-mile fuel surcharge x extra rail miles, in ¢/bu."""
+    return fsc_per_mile * miles / bu_per_car * 100
 
 # BN publishes rates by delivery month rather than one flat number — a
 # genuinely different shape from CSX/NS. The "Tarif + FSC + Cars" table is
