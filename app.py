@@ -828,31 +828,84 @@ def _loc_label(name):
     return re.sub(r" Via (\w+)", lambda m: " via " + m.group(1).upper(), t)
 
 
-def _csx_origin_block(r, show_col, show_evv, col_cells, evv_cells, periods, ncols):
-    """The FOB rows for one CSX origin row: its header (state · location, freight), then a line per active corridor.
-    Returns (rows, flag) — flag = (location, GA/FL ¢, AL/TN/KY/LA ¢) when Evansville's two rates differ."""
-    variants = []
-    if show_col:
-        variants.append(("Columbus", col_cells, r["columbus_cpb"]))
-    if show_evv:
-        variants.append(("Evansville", evv_cells, r["eville_altkyla_cpb"]))
-    differs = show_evv and r["eville_altkyla"] != r["eville_gafl"]
-    frt_desc = " / ".join(f"{lbl} {v:.1f}¢" for lbl, _, v in variants)
-    loc = _csx_loc(r)
-    rows = [f'<tr class="origin-hdr"><td colspan="{ncols}">{r["state"]} · {loc}'
-            f'<span class="fut-sub"> &nbsp;freight {frt_desc}{" *" if differs else ""}</span></td></tr>']
-    rows.extend(_fob_variant_rows(variants, periods))
-    return rows, ((loc, r["eville_gafl_cpb"], r["eville_altkyla_cpb"]) if differs else None)
-
-
 def _csx_loc(r):
     """The location of a CSX row: the buying station's town, or — where the workbook lists none — the origin group."""
-    return _location_only(r["buying_station"]) or r["origin_group"]
+    loc = _location_only(r["buying_station"])
+    return r["origin_group"] if not loc or loc == "Rule 11 Origin" else loc
 
 
-def _csx_location_lookup(rows, show_col, show_evv, col_cells, evv_cells, periods):
-    """One CSX origin picked from a list — every origin in the freight workbook, not only the starred ones — with the same
-    FOB rows as Highlighted Origins (Kolten, 2026-10-28)."""
+def _csx_differs(r):
+    """Evansville's rate depends on the unit train's downstream market: True where the GA/FL and AL/TN/KY/LA rates differ."""
+    return r["eville_altkyla"] != r["eville_gafl"]
+
+
+def _csx_fob_by_corridor(rows, active, periods, fsc_by_p, name):
+    """FOB (¢/bu), Columbus | Evansville side by side under each bid period — the layout of the BN tab's FOB by Origin (Kolten,
+    2026-10-28): the bid in a yellow row, the fuel surcharge noted beneath it (not included), negatives in parentheses red, and the
+    better corridor for each row / period shaded. rows: [(label, calc)], calc(freight field, bid) -> ¢/bu;
+    active: [(corridor label, bid cells {period: row}, freight field)]."""
+    n = len(active)
+
+    def gl(i):
+        return " gl" if i == 0 else ""
+
+    def num(v):
+        return f"{v:+.0f}" if float(v).is_integer() else f"{v:+.1f}"
+
+    def bid_html(cells, p):
+        c = cells.get(p) or {}
+        if c.get("bid") is None:
+            return "—"
+        return num(c["bid"]) + (f' <span class="off">/ {num(c["offer"])}</span>' if c.get("offer") is not None else "")
+
+    def fsc_html(p):
+        return "—" if fsc_by_p.get(p) is None else format(fsc_by_p[p], ".2f")
+
+    html = ['<table class="sheet"><tbody>',
+            '<tr><th class="title" rowspan="3">FOB CSX</th>'
+            + ''.join(f'<th class="grp gl" colspan="{n}">{p}</th>' for p in periods) + '</tr>',
+            '<tr>' + ''.join(f'<th class="sub{gl(i)}">{lbl}</th>' for _ in periods for i, (lbl, _c, _f) in enumerate(active)) + '</tr>',
+            '<tr>' + ''.join(f'<td class="bidrow{gl(i)}">{bid_html(cells, p)}</td>'
+                             for p in periods for i, (_l, cells, _f) in enumerate(active)) + '</tr>',
+            '<tr class="carsrow"><td class="lbl">Fuel surcharge &#36;/mi (not included)</td>'
+            + ''.join(f'<td class="gl" colspan="{n}">{fsc_html(p)}</td>' for p in periods) + '</tr>']
+    for label, calc in rows:
+        grid = []
+        for p in periods:
+            vals = []
+            for _l, cells, field in active:
+                bid = (cells.get(p) or {}).get("bid")
+                vals.append(None if bid is None else calc(field, bid))
+            best = max(range(n), key=lambda i: vals[i]) if n == 2 and all(v is not None for v in vals) else None
+            for i, v in enumerate(vals):
+                txt, neg = _bn_fob_cell(v)
+                grid.append(f'<td class="fobv{neg}{" divide" if i == best else ""}{gl(i)}">{txt}</td>')
+        html.append(f'<tr><td class="lbl">{label}</td>' + ''.join(grid) + '</tr>')
+    html.append('</tbody></table>')
+    table_html = ''.join(html)
+    st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+    _table_actions(table_html, f"{name}.png")
+
+
+def _csx_flag_note(flagged):
+    if flagged:
+        st.caption("* Evansville's rate depends on the unit train's downstream market — "
+                   + "; ".join(f"{loc} (GA/FL {g:+.1f}¢ vs AL/TN/KY/LA {a:+.1f}¢ used)" for loc, g, a in flagged) + ".")
+
+
+def _csx_origin_rows(origins, label_fn):
+    """([(label, calc)], flagged) for CSX origin rows: bid - the row's freight on whichever corridor field is asked."""
+    out, flagged = [], []
+    for r in origins:
+        out.append((label_fn(r) + (" *" if _csx_differs(r) else ""), lambda f, bid, r=r: bid - r[f + "_cpb"]))
+        if _csx_differs(r):
+            flagged.append((_csx_loc(r), r["eville_gafl_cpb"], r["eville_altkyla_cpb"]))
+    return out, flagged
+
+
+def _csx_location_lookup(rows, active, periods, fsc_by_p):
+    """One CSX origin picked from a list — every origin in the freight workbook, not only the starred ones — in the same
+    table as the key corridors (Kolten, 2026-10-28)."""
     st.markdown("### FOB at Any CSX Location")
     labels = {}
     for r in rows:
@@ -860,26 +913,14 @@ def _csx_location_lookup(rows, show_col, show_evv, col_cells, evv_cells, periods
     pick = st.selectbox("CSX origin", sorted(labels), index=None, key="csx_loc_pick", label_visibility="collapsed",
                         placeholder=f"Pick or type an origin — {len(labels)} in the CSX freight workbook ...")
     if not pick:
-        st.caption("Pick an origin to see its FOB, same as Highlighted Origins above.")
+        st.caption("Pick an origin to see its FOB on each corridor, same as the tables above.")
         return
     if not periods:
         st.caption("No CSX Columbus/Evansville postings on or before this date yet.")
         return
-    ncols = 1 + len(periods)
-    html = _origin_table_open(periods, ncols)
-    flagged = []
-    for r in labels[pick]:
-        block, flag = _csx_origin_block(r, show_col, show_evv, col_cells, evv_cells, periods, ncols)
-        html.extend(block)
-        if flag:
-            flagged.append(flag)
-    html.append('</tbody></table>')
-    table_html = ''.join(html)
-    st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
-    _table_actions(table_html, "csx_fob_origin.png")
-    if flagged:
-        st.caption("* Evansville's rate depends on the unit train's downstream market — "
-                   + "; ".join(f"GA/FL {g:+.1f}¢ vs AL/TN/KY/LA {a:+.1f}¢ used" for _, g, a in flagged) + ".")
+    origin_rows, flagged = _csx_origin_rows(labels[pick], lambda r: pick)
+    _csx_fob_by_corridor(origin_rows, active, periods, fsc_by_p, "csx_fob_origin")
+    _csx_flag_note(flagged)
 
 
 def _csx_tab(sel_date):
@@ -903,46 +944,39 @@ def _csx_tab(sel_date):
 
     active_markets = ([("CSX Columbus", col_cells)] if show_col else []) + \
                       ([("CSX Evansville", evv_cells)] if show_evv else [])
+    active = ([("Columbus", col_cells, "columbus")] if show_col else []) + \
+              ([("Evansville", evv_cells, "eville_altkyla")] if show_evv else [])
     st.markdown("### Rail FOB — CSX")
     _raw_corridor_table([m for m, _ in active_markets], sel_date)
+    fsc_by_p, fsc_parts = _fsc_by_period("CSX", periods) if periods else ({}, [])
     if periods:
-        _, fsc_parts = _fsc_by_period("CSX", periods)
         st.caption("CSX fuel surcharge, $/car-mile (publication 8662; the formula is inferred): " + " · ".join(fsc_parts)
                    + ". **Noted only — not included** in the freight or the FOB below (Kolten, 2026-10-28).")
 
-    st.markdown("### FOB Index by State")
-    variant_fields = ([("Columbus", "columbus_cpb")] if show_col else []) + \
-                      ([("Evansville", "eville_altkyla_cpb")] if show_evv else [])
-    bid_cells_map = {"Columbus": col_cells, "Evansville": evv_cells}
-    _state_fob_table(rows, variant_fields, bid_cells_map, periods, per_variant=True,
-                      name="csx_state_index")
-
-    st.markdown("### Highlighted Origins")
+    st.markdown("### FOB by State — Columbus vs Evansville")
     if asof_bits:
         st.caption(" · ".join(asof_bits))
-    highlighted = [r for r in rows if r["highlighted"]]
-    if periods and highlighted:
-        ncols = 1 + len(periods)
-        html = _origin_table_open(periods, ncols)
-        flagged = []
-        for r in highlighted:
-            block, flag = _csx_origin_block(r, show_col, show_evv, col_cells, evv_cells, periods, ncols)
-            html.extend(block)
-            if flag:
-                flagged.append(flag)
-        html.append('</tbody></table>')
-        table_html = ''.join(html)
-        st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
-        _table_actions(table_html, "csx_highlighted_origins.png")
-        if flagged:
-            notes = "; ".join(f"{n} (GA/FL {g:+.1f}¢ vs AL/TN/KY/LA {a:+.1f}¢ used)"
-                               for n, g, a in flagged)
-            st.caption(f"* Evansville's rate depends on the unit train's downstream "
-                       f"market — {notes}.")
+    if periods:
+        by_state = {}
+        for r in rows:
+            by_state.setdefault(r["state"], []).append(r)
+        state_rows = [(s_, lambda f, bid, os_=os_: max(bid - o[f + "_cpb"] for o in os_)) for s_, os_ in sorted(by_state.items())]
+        _csx_fob_by_corridor(state_rows, active, periods, fsc_by_p, "csx_state_index")
+        st.caption("Best (highest) FOB among every origin in the state, per corridor and bid period — an index, not any single "
+                   "origin's number. Shaded = the better corridor for that state / period.")
     else:
         st.caption("No CSX Columbus/Evansville postings on or before this date yet.")
 
-    _csx_location_lookup(rows, show_col, show_evv, col_cells, evv_cells, periods)
+    st.markdown("### Key Corridors — Highlighted Origins")
+    highlighted = [r for r in rows if r["highlighted"]]
+    if periods and highlighted:
+        origin_rows, flagged = _csx_origin_rows(highlighted, lambda r: f"{r['state']} · {_csx_loc(r)}")
+        _csx_fob_by_corridor(origin_rows, active, periods, fsc_by_p, "csx_highlighted_origins")
+        _csx_flag_note(flagged)
+    else:
+        st.caption("No CSX Columbus/Evansville postings on or before this date yet.")
+
+    _csx_location_lookup(rows, active, periods, fsc_by_p)
 
     with st.expander(f"All CSX origins, ranked by freight spread ({len(rows)} total)"):
         _expanded_freight_table(
@@ -956,12 +990,11 @@ def _csx_tab(sel_date):
         )
 
     st.markdown(
-        '<div class="legend">FOB(origin) = bid − rail freight to that buying station '
-        '(¢/bu = $/car ÷ 3500 bu/car × 100). Freight is a static reference rate from the '
-        'CSX origin-spread workbook — only the bid side is live/archived. CSX\'s fuel surcharge is shown above but '
-        'not added. Highlighted = '
-        'the origins starred in that workbook; <span class="sw bt"></span>blue = the '
-        'better-netback corridor for that origin/period.</div>',
+        '<div class="legend">¢/bu, FOB(origin) = bid − rail freight to that buying station '
+        '(¢/bu = &#36;/car ÷ 3500 bu/car × 100); negatives in parentheses. Freight is a static reference rate from the '
+        'CSX origin-spread workbook — only the bid side is live/archived. The yellow row is the bid / offer on each corridor; '
+        "CSX's fuel surcharge is shown beneath it but not added. Highlighted = "
+        'the origins starred in that workbook. Shaded = the better corridor for that row and period.</div>',
         unsafe_allow_html=True,
     )
 
@@ -1757,7 +1790,7 @@ def _cn_origin_block(r, base_fn, freight_fn, months, active_cols, ncols):
             *_variant_value_rows(label_rows)]
 
 
-def _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift=0):
+def _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift_by_m):
     """make(over) -> freight_fn(row, size, rate field, period) in ¢/bu: the tariff rate plus, when the fuel surcharge is on,
     that period's CN 7403 $/mile x the origin's miles to the Gulf (cn_miles.py; `over` = {(origin, state): typed miles}).
     None when the surcharge or the miles aren't known, so the cell shows "—" rather than a freight without its fuel."""
@@ -1765,7 +1798,7 @@ def _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift=0):
         over = over or {}
 
         def freight(r, size, field, m):
-            extra = float(uplift)
+            extra = float(uplift_by_m.get(m, 0))
             if fsc_on:
                 key = (r["origin"], r["state"])
                 mi = over[key] if key in over else CM.miles_to_gulf(key[0], key[1], champ_miles)[0]
@@ -1858,19 +1891,16 @@ def _cn_tab(sel_date):
     if fsc_on:
         champ_miles = st.number_input("Champaign → Gulf rail miles", min_value=0, step=10, value=CM.CHAMPAIGN_MILES,
                                       key="cn_champ_miles",
-                                      help="About Gibson City's 983 (the USDA tariff table's fuel surcharge ÷ CN's \\$/mile). "
+                                      help="About 33 miles south of Gibson City's 870 (USDA's route miles, Gibson City to Reserve, LA). "
                                            "Other origins are this plus their estimated distance from Champaign; against a "
                                            "bid FOB Champaign it cancels, and only the difference in miles is charged.")
-    usda_gap = FD.cn_usda_uplift()
-    uplift = st.number_input("CN tariff level — added to every tariff rate (\\$/car)", step=25, value=usda_gap, key="cn_uplift",
-                             help="The tariff rates in the seed (Supplement 41) are the same amount under USDA's October tariff for "
-                                  "Gibson City on both car sources; CN raised its rates this year (October). 0 = the seed's rates as is.")
-    st.caption(f"USDA AMS GTR 10-22-26, Gibson City → Reserve, large car: \\${FD.CN_USDA['Railroad']:,} railroad / "
-               f"\\${FD.CN_USDA['Private']:,} private, against the seed's 105+ car rate \\${usda_gap:,} lower for both; the same "
-               f"\\${usda_gap:,} is added to every origin's rates (USDA lists no other CN origin to check it on). It cancels in the "
-               "bean-bid view, where only the difference from Champaign counts.")
+    uplift_override = st.number_input("CN tariff level — override ($/car added to every tariff rate)", step=25, value=None,
+                                      placeholder="USDA monthly level", key="cn_uplift",
+                                      help="Blank = each period's CN tariff level from USDA's monthly series for Gibson City, as a flat $/car on "
+                                           "every origin. Type a number to use that for every period instead (0 = the seed's rates as is).")
+    uplift_by_m = {}
     fsc_by_m = {}
-    make_freight = _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift)
+    make_freight = _cn_freight_factory(commodity, fsc_on, fsc_by_m, champ_miles, uplift_by_m)
     freight_fn = make_freight()
 
     # ── FOB sections up top; the raw tariff table moves to the bottom for reference — Kolten's call,
@@ -1915,9 +1945,27 @@ def _cn_tab(sel_date):
                 base_fn = lambda m, size, field: cif.get(m)
 
     fsc_win = RF.window("CN", _diesel_weekly, date.today()) if fsc_on else {}
+    seed_level = FD.cn_seed_level()
+    tariff_bits = []
     for m in months:
         mo = FD.bn_period_first_month(m)
+        if uplift_override is not None:
+            uplift_by_m[m] = uplift_override
+            tariff_bits.append(f"{m} {uplift_override:+,.0f}")
+        elif mo:
+            level, kind = FD.cn_tariff_level(mo, date.today())
+            uplift_by_m[m] = 0 if level is None else level - seed_level
+            tariff_bits.append(f"{m} {uplift_by_m[m]:+,.0f} (" + ("USDA actual" if kind == "actual" else "USDA's same month last year"
+                               if kind else "no USDA data") + ")")
+        else:
+            uplift_by_m[m] = 0
+            tariff_bits.append(f"{m} +0")
         fsc_by_m[m] = (fsc_win.get(FD._BN_MONTH3_REV[mo]) or {}).get("fsc") if mo else None
+    if months and not price_error:
+        st.caption("CN tariff level vs the seed, \\$/car on every origin: " + " · ".join(tariff_bits)
+                   + f". The seed (Supplement 41) is USDA's Gibson City rate for Jun-Aug 2026 (\\${seed_level:,} large railroad car); "
+                   "CN's tariff moves by month — Oct is a seasonal peak ($3,011), and Nov fell $330 last year. USDA lists only Gibson City, "
+                   "so the same change is assumed for every origin. It cancels against the Champaign bean bids.")
     if fsc_on and months and not price_error:
         kinds = {"published": "CN-published", "formula": "formula on EIA diesel", "held": "last published, held flat"}
         parts = []

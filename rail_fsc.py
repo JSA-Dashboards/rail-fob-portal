@@ -58,11 +58,13 @@ PROGRAMS = {
     "CN": {
         "name": "CN 7403 mileage-based carload fuel surcharge",
         "rule": "Tariff CN 7403 — bulk commodities (coal, fertilizer, grain) 0.575c per mile per 2.5c of diesel over a $2.30 US base",
-        "strike": 2.30, "step": 0.025, "per_step": 0.00575, "base": 0.0, "rounding": "up", "trunc_cents": False, "dec": 4,
-        "confidence": "Formula and base are on CN's page; the lag and the round-up are inferred from its published values.",
+        "strike": 2.30, "step": 0.025, "per_step": 0.006496, "base": 0.0, "rounding": "up", "trunc_cents": False, "dec": 3,
+        "confidence": "Strike, step and round-up are on CN's page and reproduce its values; but the $/mile CN BILLS on grain (USDA AgTransport's "
+                      "fsc_per_mile, e.g. $0.825 in Oct) is 1.1298 x the page's 0.575c per step, exactly, so per_step is 0.6496c, "
+                      "fitted to USDA's Jun-Oct 2026 values (all exact). The lag is inferred.",
         "links": [("CN fuel surcharge", "https://www.cn.ca/en/customer-centre/prices-tariffs-transit-times/fuel-surcharge/")],
-        "published": {"2026-09": 0.6153, "2026-10": 0.7303, "2026-11": 0.92},
-        "published_from": "CN's page (US bulk column)",
+        "published": {"2026-09": 0.695, "2026-10": 0.825, "2026-11": 1.039},
+        "published_from": "USDA AgTransport (what CN billed, Sep / Oct); Nov = CN's page 0.92 x 1.1298 (160 steps)",
     },
     "CSX": {
         "name": "CSX public-tariff mileage surcharge (publication 8662)",

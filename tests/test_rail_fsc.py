@@ -35,8 +35,8 @@ eq(RF.fsc("UP", 2.349), 0.05, "UP counts full steps only")
 eq(RF.fsc("UP", 2.35), 0.06, "UP's first full step")
 eq(RF.fsc("BN", 3.251), 0.01, "BN counts a started step")
 eq(RF.fsc("NS", 6.299), RF.fsc("NS", 6.29), "NS cuts the diesel price to the cent")
-eq(RF.fsc("CN", 6.291), 0.92, "CN, 160 steps of 0.575c")
-eq(RF.fsc("CN", 4.955), 0.6153, "CN rounds half up to 4 places (107 steps = 0.61525)")
+eq(RF.fsc("CN", 6.291), 1.039, "CN, 160 steps of 0.6496c")
+eq(RF.fsc("CN", 4.955), 0.695, "CN, 107 steps = 0.695072 (USDA Sep)")
 eq(RF.fsc("UP", 1.0), 0.0, "under the strike")
 
 # the month table works for another railroad

@@ -2,18 +2,19 @@
 Rail miles to the Gulf for the CN fuel surcharge (Kolten, 2026-10-28: "check on CN FSC ... I believe it should be added").
 
 CN's fuel surcharge (tariff CN 7403, rail_fsc.PROGRAMS["CN"]) is $/car-MILE, so it needs each origin's miles to the Gulf
-Exports Group, which CN gives only through its Get Rail Miles tool (an eBusiness login). What can be checked:
-
-  * USDA AMS's Grain Transportation Report tables list CN Gibson City, IL -> Reserve, LA with its fuel surcharge per car:
-    $605 in the Sept 24 report (CN's Sept bulk surcharge $0.6153/mi) and $718 in the Oct 22 report ($0.7303/mi) — both
-    exactly 983 miles. That is the one real mileage here (ANCHOR_MILES), and it confirms the surcharge is ADDED to the
-    tariff rate (Gibson City: $3,011 tariff + $718 fuel = $3,729 in October).
-  * Everything else is estimated from the origin's place coordinates (data/rail_directory/place_coords.json, Census
-    centroids). Champaign is taken as ~Gibson City's 983 (35 miles apart on the same line). Origins in IA / WI / MI / MN
-    reach the Gulf through Chicago, so their miles = 1.25 x the great-circle miles to Chicago + 136 (Chicago-Champaign) +
-    Champaign's; the rest sit on or near the Illinois Central line, so miles = Champaign's +/- 1.10 x the great-circle
-    miles to Champaign (+ north of it, - south). The circuity factors are judgement, not fitted — only one real mileage
-    exists — so treat an estimate as good to roughly 10-15% of the distance from Champaign, and prefer a typed figure.
+Exports Group, which CN gives only through its Get Rail Miles tool (an eBusiness login; its public price-documents pages ask for
+a visitor registration). What can be checked — USDA AMS's AgTransport tariff dataset (data/usda_cn_tariff.json) carries CN's own
+route miles and the surcharge CN billed:
+  * Gibson City, IL -> Reserve, LA is 870 miles and CN billed $0.825/mile in Oct 2026 = $717.75 a car (the USDA Grain
+    Transportation Report's $718). That is the real mileage (ANCHOR_MILES). It confirms the surcharge is ADDED to the tariff rate.
+    (An earlier version took 983 miles from CN's page figure $0.7303/mile; the billed rate is 1.1298 x that, so 983 was wrong.)
+  * Ida Grove, IA -> Convent, LA is 1,376 miles (USDA), and Minneapolis -> New Orleans 1,277. Both fit going through Chicago on the
+    straight-line distance to Chicago (C_CHICAGO = 1.0): Champaign + 136 (Chicago-Champaign) + the great-circle miles to Chicago.
+  * Everything else is estimated from the origin's place coordinates (data/rail_directory/place_coords.json, Census centroids).
+    Champaign is ~33 miles south of Gibson City on the same line (837). Origins in IA / WI / MI / MN go via Chicago as above; the
+    rest sit on or near the Illinois Central line, so miles = Champaign's +/- 1.10 x the great-circle miles to Champaign (+ north of
+    it, - south; 1.10 is what Chicago-Champaign's 136 rail miles vs 124 great-circle gives). Judgement beyond those two checks, so
+    treat an estimate as good to roughly 10% of the distance from Champaign, and prefer a typed figure.
 
 Against a bid FOB Champaign the Champaign figure cancels: FOB(origin) = bid + freight(Champaign) - freight(origin), so the
 fuel surcharge only enters as FSC x (Champaign miles - origin miles), which needs just the distance difference, not
@@ -24,12 +25,12 @@ Pure functions; no Streamlit.
 import bn_locator as BL
 
 ANCHOR = ("GIBSON CITY", "IL")
-ANCHOR_MILES = 983                         # USDA GTR: $718 / $0.7303 (Oct) = $605 / $0.6153 (Sep) = 983
-CHAMPAIGN_MILES = ANCHOR_MILES             # Champaign is ~35 miles from Gibson City on the same line
+ANCHOR_MILES = 870                         # USDA AgTransport route_mileage; $0.825 x 870 = $717.75 (Oct), $0.695 x 870 = $604.65 (Sep)
+CHAMPAIGN_MILES = ANCHOR_MILES - 33        # Champaign is ~33 miles south of Gibson City on the same line
 CHICAGO = (41.8781, -87.6298)
 CHICAGO_TO_CHAMPAIGN = 136                 # rail miles, Illinois Central main line
 VIA_CHICAGO = {"IA", "WI", "MI", "MN"}
-C_CHICAGO = 1.25
+C_CHICAGO = 1.0                            # Ida Grove IA (1,376 mi) and Minneapolis (1,277 to New Orleans) both fit ~1.0
 C_DIRECT = 1.10
 EST_NOTE = "estimated from the town's coordinates"
 
@@ -60,7 +61,7 @@ def miles_to_gulf(origin, state, champaign_miles=CHAMPAIGN_MILES):
     if (origin.upper(), state) == ANCHOR:
         return ANCHOR_MILES, "USDA tariff table (Sept / Oct 2026)"
     if (origin.upper(), state) == ("CHAMPAIGN", "IL"):
-        return champaign_miles, "taken as about Gibson City's"
+        return champaign_miles, "about 33 miles south of Gibson City's 870"
     d = delta_miles(origin, state)
     if d is None:
         return None, "no coordinates for this station"

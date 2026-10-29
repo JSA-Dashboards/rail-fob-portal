@@ -292,19 +292,38 @@ CN_COMMODITIES = ["Corn", "Soybeans"]
 CN_LB_PER_BU = {"Corn": 56, "Soybeans": 60}
 
 
-# USDA AMS Grain Transportation Report 10-22-26, Table 7: CN Gibson City, IL -> Reserve, LA, large covered hopper (C-114), 90+ car
-# shuttle, tariff per car. The seed (Supplement 41) is the same $495/car lower for BOTH car sources (Large 105+: $2,516 / $2,136), so
-# CN's rates read as one flat step up since the supplement (Kolten, 2026-10-28: "CN raised rates this year starting in Oct. Use USDA
-# numbers"); applied to every origin as a uniform $/car — USDA lists no other CN origin to check that against.
-CN_USDA = {"origin": ("GIBSON CITY", "IL"), "tier": "105+ cars", "Railroad": 3011, "Private": 2631,
-           "source": "USDA AMS Grain Transportation Report 10-22-26, Table 7"}
+# CN's tariff moves by MONTH. data/usda_cn_tariff.json is USDA AMS AgTransport's monthly series for CN Gibson City, IL -> Reserve, LA
+# (large car, 105+ car unit train; Private is always $380 under Railroad — the seed's gap too), Nov 2023 - Oct 2026. The seed
+# (Supplement 41, Gibson City 105+, large car: $2,516 railroad / $2,136 private) is exactly the Jun-Aug 2026 rate. Since then:
+# Sep $2,791, Oct $3,011 (+$495) — a seasonal Oct peak: Nov fell $220 in 2024 and $330 in 2025. USDA lists no other CN origin, so a
+# month's change is applied to every origin as a flat $/car (Kolten, 2026-10-28: "use USDA numbers").
+def cn_usda_series():
+    """{'YYYY-MM': {'Railroad': $/car, 'Private': $/car, 'fsc_per_mile': $, 'miles': 870}} from USDA's CN Gibson City rows."""
+    return _load(os.path.join("data", "usda_cn_tariff.json"))["rows"]
 
 
-def cn_usda_uplift():
-    """$/car that CN's tariff stands above the seed at the USDA origin (the large-car columns, rate_b railroad / rate_d private)."""
-    r = next(r for r in load_cn() if (r["origin"], r["state"]) == CN_USDA["origin"] and r["tier"] == CN_USDA["tier"])
-    gaps = {CN_USDA["Railroad"] - r["rate_b"], CN_USDA["Private"] - r["rate_d"]}
-    return gaps.pop() if len(gaps) == 1 else round(sum(gaps) / len(gaps))
+def cn_seed_level():
+    """The seed's Gibson City, 105+ car, large railroad-car rate (the one USDA's series is compared with)."""
+    r = next(r for r in load_cn() if (r["origin"], r["state"]) == ("GIBSON CITY", "IL") and r["tier"] == "105+ cars")
+    return r["rate_b"]
+
+
+def cn_tariff_level(month, today):
+    """(USDA's CN Gibson City railroad-car rate for the next occurrence of `month` (1-12), kind). kind 'actual' when USDA has that
+    month, else 'last year' (the same month a year, or more, earlier). (None, None) if the series has nothing for that month."""
+    rows = cn_usda_series()
+    year = today.year if month >= today.month else today.year + 1
+    for back in range(0, 4):
+        row = rows.get(f"{year - back}-{month:02d}")
+        if row:
+            return row["Railroad"], ("actual" if back == 0 else "last year")
+    return None, None
+
+
+def cn_tariff_uplift(month, today):
+    """$/car to add to every seed rate for `month` (0 when the series has none): that month's USDA level minus the seed's."""
+    level, _ = cn_tariff_level(month, today)
+    return 0 if level is None else level - cn_seed_level()
 
 
 def cn_freight_cpb(rate, size, commodity="Corn", extra=0.0):
