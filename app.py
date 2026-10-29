@@ -1503,10 +1503,11 @@ def _bn_quote(cells_by_dest, overrides, dest, p):
     return _bn_effective_quote(cells_by_dest[dest], p), False
 
 
-def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=True):
+def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=True, by_state=False, name="bn_fob_by_origin"):
     """FOB (¢/bu) per origin, PNW | Hereford side by side under each of the headline periods, in the layout of
     Kolten's "FOB BN" sheet (2026-10-28): the bid in a yellow row, the BN Car Val / FSC per Mi row, and the
-    better destination for each origin shaded (the geographical PNW-Hereford divide)."""
+    better destination for each origin shaded (the geographical PNW-Hereford divide). by_state: one row per state, each
+    cell the BEST FOB among that state's origins (an index, not any one origin)."""
     periods = list(_BN_TARGET_MONTHS)
     n = len(active)
     by_key = {w["key"]: w for w in window}
@@ -1544,24 +1545,36 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
         cells = [cars, fsc] if n == 2 else [f"{cars} / {fsc}"]
         html.append(''.join(f'<td class="gl">{c}</td>' if i == 0 else f'<td>{c}</td>' for i, c in enumerate(cells)))
     html.append('</tr>')
-    for r in rows:
+    groups = [(r["origin"], [r]) for r in rows]
+    if by_state:
+        by = {}
+        for r in rows:
+            by.setdefault(r["state"], []).append(r)
+        groups = sorted(by.items())
+    for label, grp in groups:
         grid = []
         for p in periods:
             vals = []
             for dest, spec in active:
                 q = quote(dest, p)[0]
                 bid = q[0] if q else None
-                frt = FD.bn_freight_cpb(r[spec["field"] + "_cpb"], p)
-                vals.append(None if bid is None or frt is None else bid - frt)
-            best = max(range(n), key=lambda i: vals[i]) if sum(v is not None for v in vals) == 2 else None
+                best_v = None
+                for r in grp:
+                    frt = FD.bn_freight_cpb(r[spec["field"] + "_cpb"], p)
+                    if bid is None or frt is None:
+                        continue
+                    if best_v is None or bid - frt > best_v:
+                        best_v = bid - frt
+                vals.append(best_v)
+            bi = max(range(n), key=lambda i: vals[i]) if sum(v is not None for v in vals) == 2 else None
             for i, v in enumerate(vals):
                 txt, neg = _bn_fob_cell(v)
-                grid.append(f'<td class="fobv{neg}{" divide" if i == best else ""}{gl(i)}">{txt}</td>')
-        html.append(f'<tr><td class="lbl">{r["origin"]}</td>' + ''.join(grid) + '</tr>')
+                grid.append(f'<td class="fobv{neg}{" divide" if i == bi else ""}{gl(i)}">{txt}</td>')
+        html.append(f'<tr><td class="lbl">{label}</td>' + ''.join(grid) + '</tr>')
     html.append('</tbody></table>')
     table_html = ''.join(html)
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
-    _table_actions(table_html, "bn_fob_by_origin.png")
+    _table_actions(table_html, f"{name}.png")
     if not legend:
         return
     st.markdown(
@@ -1575,6 +1588,18 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
 @st.cache_data
 def _bn_lookup_origins():
     return BL.origins(FD.load_bn_seed()["origins"]), BL.default_hereford_adder(FD.load_bn_seed()["origins"])
+
+
+def _bn_all_rows(window):
+    """Every BNSF location with a price-list or sheet rate — the sheet's 13 and the price list's others — built like the sheet's
+    rows (the sheet's own rates and miles where it has them; elsewhere the price list's rate plus the default adders and
+    miles estimated from the shippers' coordinates). A lane with no rate or no miles is left out of that origin's FOB."""
+    opts, _adder0 = _bn_lookup_origins()
+    out = []
+    for name, o in opts.items():
+        out.append(FD.bn_build_row({"origin": name.title(), "state": o["state"], "pnw_rate": o["pnw_rate"], "pnw_miles": o["pnw_miles"],
+                                    "herf_rate": o["herf_rate"], "herf_miles": o["herf_miles"]}, window))
+    return out
 
 
 def _bn_location_lookup(active, cells_by_dest, window, overrides):
@@ -1659,10 +1684,20 @@ def _bn_tab(sel_date):
 
     _bn_secondary_table(inputs["payload"], auto)
 
-    st.markdown("### FOB by Origin")
+    st.markdown("### FOB by State — PNW vs Hereford")
     if any(cells_by_dest.values()):
-        _bn_fob_by_origin(rows, active, cells_by_dest, window, BNI.bid_overrides(inputs["payload"]))
-        _bn_location_lookup(active, cells_by_dest, window, BNI.bid_overrides(inputs["payload"]))
+        overrides = BNI.bid_overrides(inputs["payload"])
+        all_rows = _bn_all_rows(window)
+        _bn_fob_by_origin(all_rows, active, cells_by_dest, window, overrides, legend=False, by_state=True, name="bn_state_index")
+        est = sum(1 for o in _bn_lookup_origins()[0].values() if not o["seeded"]
+                  and any(o[f"{lane}_rate"] is not None and o[f"{lane}_miles"] is not None for lane in ("pnw", "herf")))
+        st.caption(f"Best (highest) FOB among every BNSF location in the state — the sheet's {len(rows)} origins plus {est} more from the BNSF "
+                   "price list whose face rate is the list's (+ the Hereford adder) and whose miles are estimated from the shipper's "
+                   "coordinates (about ±70 miles, ~1¢/bu; rougher outside MN / SD / NE / IA / IL) — an index, not any single origin's "
+                   "number. Shaded = the better destination for that state / period.")
+        st.markdown("### Key Corridors — Highlighted Origins")
+        _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides)
+        _bn_location_lookup(active, cells_by_dest, window, overrides)
     else:
         st.caption("No BN PNW/Hereford postings on or before this date yet.")
 
