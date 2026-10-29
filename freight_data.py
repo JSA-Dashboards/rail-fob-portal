@@ -166,13 +166,19 @@ def load_bn(window):
     (secondary-market) premium in $/car — PNW takes all of it, Hereford half."""
     rows = load_bn_seed()["origins"]
     for r in rows:
-        r["pnw"] = {w["key"]: r["pnw_rate"] + r["pnw_miles"] * w["fsc_per_mile"] + w["cars"]
-                    for w in window}
-        r["hereford"] = {w["key"]: r["herf_rate"] + r["herf_miles"] * w["fsc_per_mile"] + w["cars"] / 2
-                         for w in window}
-        for f in ("pnw", "hereford"):
-            r[f"{f}_cpb"] = {m: v / BN_BU_PER_CAR * 100 for m, v in r[f].items()}
+        bn_build_row(r, window)
     return rows
+
+
+def bn_build_row(r, window):
+    """Adds pnw / hereford ($/car by month key) and pnw_cpb / hereford_cpb (¢/bu) to one origin dict that carries
+    pnw_rate, pnw_miles, herf_rate, herf_miles. A lane whose rate or miles is None (no list rate, or miles not known yet)
+    gets empty dicts, so its FOB shows "—". Shared by the freight sheet's 13 origins and bn_locator's lookup."""
+    for lane, rate, miles, share in (("pnw", "pnw_rate", "pnw_miles", 1), ("hereford", "herf_rate", "herf_miles", 0.5)):
+        ok = r.get(rate) is not None and r.get(miles) is not None
+        r[lane] = {w["key"]: r[rate] + r[miles] * w["fsc_per_mile"] + w["cars"] * share for w in window} if ok else {}
+        r[f"{lane}_cpb"] = {m: v / BN_BU_PER_CAR * 100 for m, v in r[lane].items()}
+    return r
 
 
 # CN's sheet is a straight copy of its published Gulf Export tariff (CN

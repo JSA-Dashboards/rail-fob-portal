@@ -30,6 +30,7 @@ import streamlit.components.v1 as components
 
 import bn_fsc as BNF
 import bn_inputs as BNI
+import bn_locator as BL
 import freight_data as FD
 import rail_data as RD
 import rail_reference as REF
@@ -1302,7 +1303,15 @@ def _bn_fob_cell(v):
     return (f"({abs(v):.1f})", " neg") if v < 0 else (f"{v:.1f}", "")
 
 
-def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides):
+def _bn_quote(cells_by_dest, overrides, dest, p):
+    """((bid, offer) | None, typed override?) — a bid typed in BN freight inputs replaces the board's."""
+    ov = (overrides.get(dest) or {}).get(p)
+    if ov and ov.get("bid") is not None:
+        return (ov["bid"], ov.get("offer")), True
+    return _bn_effective_quote(cells_by_dest[dest], p), False
+
+
+def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=True):
     """FOB (¢/bu) per origin, PNW | Hereford side by side under each of the headline periods, in the layout of
     Kolten's "FOB BN" sheet (2026-10-28): the bid in a yellow row, the BN Car Val / FSC per Mi row, and the
     better destination for each origin shaded (the geographical PNW-Hereford divide)."""
@@ -1321,11 +1330,7 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides):
         return f"{v:+.0f}" if float(v).is_integer() else f"{v:+.1f}"
 
     def quote(dest, p):
-        """((bid, offer) | None, typed override?) — a bid typed in BN freight inputs replaces the board's."""
-        ov = (overrides.get(dest) or {}).get(p)
-        if ov and ov.get("bid") is not None:
-            return (ov["bid"], ov.get("offer")), True
-        return _bn_effective_quote(cells_by_dest[dest], p), False
+        return _bn_quote(cells_by_dest, overrides, dest, p)
 
     def quote_html(q):
         if q is None:
@@ -1365,12 +1370,73 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides):
     table_html = ''.join(html)
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
     _table_actions(table_html, "bn_fob_by_origin.png")
+    if not legend:
+        return
     st.markdown(
         '<div class="legend">¢/bu, bid − freight: negatives in parentheses; a dotted underline marks a bid typed in BN freight inputs. The yellow row is the bid / offer used (a Split '
         "month, FH+LH averaged or the OND / AMJJ package filled in where that period wasn't posted). BN Car Val is the "
         'secondary-market shuttle bid in &#36;/car (Hereford takes half) and FSC is &#36;/mile, both from the inputs '
         'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide).</div>',
         unsafe_allow_html=True)
+
+
+@st.cache_data
+def _bn_lookup_origins():
+    return BL.origins(FD.load_bn_seed()["origins"]), BL.default_hereford_adder(FD.load_bn_seed()["origins"])
+
+
+def _bn_location_lookup(active, cells_by_dest, window, overrides):
+    """FOB for ANY origin on the BNSF price list (Kolten, 2026-10-28), not only the sheet's 13: its face rates from the price
+    list, lane miles estimated from the BNSF shippers directory's coordinates (bn_locator.py) — both editable here — then the
+    same freight and FOB as the table above."""
+    st.markdown("### FOB at Any BN Location")
+    opts, adder0 = _bn_lookup_origins()
+    pick = st.selectbox("BN origin", list(opts), index=None, key="bn_loc_pick", label_visibility="collapsed",
+                        placeholder=f"Pick or type an origin — {len(opts)} on the BNSF price list ...")
+    if not pick:
+        st.caption("Pick an origin for its FOB the way the table above builds it: BNSF price list face rate, lane miles "
+                   "estimated from the shipper's coordinates (you can type your own), this month's FSC and BN Cars premium.")
+        return
+    o = opts[pick]
+    k = re.sub(r"\W+", "_", pick)
+    c1, c2, c3 = st.columns(3)
+    pm = c1.number_input("PNW miles", min_value=0, step=10, value=o["pnw_miles"], key=f"bn_loc_pm_{k}",
+                         disabled=o["pnw_rate"] is None, placeholder="type miles")
+    hm = c2.number_input("Hereford miles", min_value=0, step=10, value=o["herf_miles"], key=f"bn_loc_hm_{k}",
+                         disabled=o["herf_rate"] is None, placeholder="type miles")
+    herf_rate = o["herf_rate"]
+    if not o["seeded"] and o.get("herf_list") is not None:
+        adder = c3.number_input("Hereford adder \\$/car", min_value=0, step=10, value=adder0, key="bn_loc_adder",
+                                help="The sheet's Hereford face rates run \\$0-\\$200 a car over the price list's, "
+                                     "varying by origin; this is their average. Edit it if you know better.")
+        herf_rate = o["herf_list"] + adder
+    row = FD.bn_build_row({"origin": f"{pick.title()[:-2]}{o['state']}", "pnw_rate": o["pnw_rate"], "pnw_miles": pm,
+                           "herf_rate": herf_rate, "herf_miles": hm}, window)
+    _bn_fob_by_origin([row], active, cells_by_dest, window, overrides, legend=False)
+
+    def src(est, typed):
+        if o["seeded"]:
+            return "from the freight sheet"
+        if typed is None:
+            return o["miles_note"] + " — type miles to get this lane's FOB"
+        return o["miles_note"] if typed == est else "typed"
+    bits = []
+    if o["pnw_rate"] is None:
+        bits.append("No PNW rate for this origin on the BNSF price list.")
+    else:
+        bits.append(f"PNW face \\${o['pnw_rate']:,.0f}/car" + ("" if o["seeded"] else f" (price list \\${o['pnw_list']:,.0f} + \\${BL.PNW_ADDER})")
+                    + f", {'—' if pm is None else f'{pm:,.0f}'} mi ({src(o['pnw_miles'], pm)})")
+    if o["herf_rate"] is None:
+        bits.append("No Hereford rate for this origin on the BNSF price list.")
+    else:
+        bits.append(f"Hereford face \\${herf_rate:,.0f}/car" + ("" if o["seeded"] else f" (price list \\${o['herf_list']:,.0f} + \\${adder})")
+                    + f", {'—' if hm is None else f'{hm:,.0f}'} mi ({src(o['herf_miles'], hm)})")
+    st.caption(" · ".join(bits) + ". Freight and the FSC / BN Car Val in the table are the same as above.")
+    if not o["seeded"] and o["coords"] and o["off_box"] and (pm == o["pnw_miles"] or hm == o["herf_miles"]):
+        st.caption(f"⚠️ This origin is outside the area the mileage estimate was fitted on (about MN / SD / NE / IA / IL), "
+                   f"so treat the estimate as rougher than the usual ±{BL.EST_ERROR_MILES} miles (~1¢/bu) — typing the real miles is better.")
+    elif not o["seeded"]:
+        st.caption(f"Estimated miles are good to about ±{BL.EST_ERROR_MILES} (~1¢/bu at the current FSC); type the real figure to override.")
 
 
 def _bn_tab(sel_date):
@@ -1404,6 +1470,7 @@ def _bn_tab(sel_date):
     st.markdown("### FOB by Origin")
     if any(cells_by_dest.values()):
         _bn_fob_by_origin(rows, active, cells_by_dest, window, BNI.bid_overrides(inputs["payload"]))
+        _bn_location_lookup(active, cells_by_dest, window, BNI.bid_overrides(inputs["payload"]))
     else:
         st.caption("No BN PNW/Hereford postings on or before this date yet.")
 
@@ -1480,12 +1547,12 @@ def _bn_tab(sel_date):
 _CN_LETTER = {v: k[-1].upper() for k, v in FD.CN_RATE_FIELD.items()}
 
 
-def _cn_state_fob_table(filtered, cif, months, active_cols, commodity):
-    """One row per state per active car size/source variant, one column per
-    CIF month — best (highest) FOB among every origin/volume-tier in that
-    state for that variant. Mirrors CSX's per-variant FOB Index by State
-    (_state_fob_table above), but built against CN's CIF-month columns and
-    per-row size/source freight instead of a period-keyed bid market."""
+def _cn_state_fob_table(filtered, base_fn, months, labels, active_cols, commodity, col_word):
+    """One row per state per active car size/source variant, one column per price period — best (highest)
+    FOB among every origin/volume-tier in that state for that variant. Mirrors CSX's per-variant FOB Index by
+    State (_state_fob_table above), but built against CN's price columns and per-row size/source freight instead
+    of a period-keyed bid market. base_fn(period, size, rate field) is the price the freight comes off (the CIF
+    month, or a bean bid carried from Champaign), None where there isn't one."""
     by_state = {}
     for r in filtered:
         by_state.setdefault(r["state"], []).append(r)
@@ -1495,7 +1562,7 @@ def _cn_state_fob_table(filtered, cif, months, active_cols, commodity):
 
     ncols = 1 + len(months)
     html = ['<table class="sheet"><tbody><tr>', '<th class="lblhdr">State</th>']
-    html += [f'<th>{m}</th>' for m in months]
+    html += [f'<th>{lbl}</th>' for lbl in labels]
     html.append('</tr>')
     for s in sorted(by_state):
         rows_s = by_state[s]
@@ -1503,12 +1570,11 @@ def _cn_state_fob_table(filtered, cif, months, active_cols, commodity):
         for size, source, field in active_cols:
             vals = []
             for m in months:
-                base = cif.get(m)
+                base = base_fn(m, size, field)
                 if base is None:
                     vals.append(None)
                     continue
-                best = max(base - FD.cn_freight_cpb(r[field], size, commodity) for r in rows_s)
-                vals.append(best)
+                vals.append(max(base - FD.cn_freight_cpb(r[field], size, commodity) for r in rows_s))
             label_rows.append((f"{size} · {source}", vals))
         html.append(f'<tr class="origin-hdr"><td colspan="{ncols}">{s}</td></tr>')
         html.extend(_variant_value_rows(label_rows))
@@ -1517,15 +1583,48 @@ def _cn_state_fob_table(filtered, cif, months, active_cols, commodity):
     st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
     _table_actions(table_html, "cn_state_index.png")
     st.caption("Best (highest) FOB among every origin/volume-tier in that state, per car "
-               "size/source, per CIF month — an index, not any single origin's actual "
-               "number. Blue = the better size/source for that state/month.")
+               f"size/source, per {col_word} — an index, not any single origin's actual "
+               "number. Blue = the better size/source for that state/period.")
 
 
-def _cn_tab():
+def _cn_origin_block(r, base_fn, months, active_cols, commodity, ncols):
+    """The FOB by Origin rows for one tariff row: its header, then a line per car size / source."""
+    label_rows = []
+    for size, source, field in active_cols:
+        frt = FD.cn_freight_cpb(r[field], size, commodity)
+        label_rows.append((f"{size} · {source}", [None if base_fn(m, size, field) is None
+                                                  else base_fn(m, size, field) - frt for m in months]))
+    switch_mark = ' <span class="fut-sub">⇄ recip. switch</span>' if r["switch"] else ''
+    return [f'<tr class="origin-hdr"><td colspan="{ncols}">{r["state"]} · {r["origin"]}'
+            f'<span class="fut-sub"> &nbsp;{r["tier"] or r["notes"] or ""}</span>{switch_mark}</td></tr>',
+            *_variant_value_rows(label_rows)]
+
+
+def _cn_location_lookup(lookup_rows, base_fn, months, labels, active_cols, commodity):
+    """One CN origin picked from a list: every volume tier it has, per car size / source — the same numbers as FOB by Origin
+    (Kolten, 2026-10-28). CN's tariff rates are flat \\$/car per origin, so no miles are needed."""
+    st.markdown(f"### {commodity} FOB at Any CN Location")
+    names = sorted({f"{r['origin'].title()}, {r['state']}" for r in lookup_rows})
+    pick = st.selectbox("CN origin", names, index=None, key="cn_loc_pick", label_visibility="collapsed",
+                        placeholder=f"Pick or type an origin — {len(names)} in the CN tariff ...")
+    if not pick:
+        st.caption("Pick an origin to see just its rows from the table above, across the volume tiers it has.")
+        return
+    rows_o = [r for r in lookup_rows if f"{r['origin'].title()}, {r['state']}" == pick]
+    ncols = 1 + len(months)
+    html = _origin_table_open(labels, ncols)
+    for r in rows_o:
+        html.extend(_cn_origin_block(r, base_fn, months, active_cols, commodity, ncols))
+    html.append('</tbody></table>')
+    table_html = ''.join(html)
+    st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+    _table_actions(table_html, "cn_fob_origin.png")
+
+
+def _cn_tab(sel_date):
     st.caption("Raw CN Gulf Export tariff rates (Supplement 41 to Tariff CN 004050-A8), plus "
-               "a FOB netback against CIF NOLA from the River FOB Portal — CN's freight "
-               "doesn't net against a rail_fob bid market like CSX/NS/BN do, since this "
-               "corridor is entirely about moving grain to the Gulf for export.")
+               "a FOB netback against CIF NOLA from the River FOB Portal — corn and soybeans both. "
+               "Soybeans can instead net against the CN 105s Beans bids (FOB Champaign) from the rail bid archive.")
 
     sc, pc, cc = st.columns(3)
     with sc:
@@ -1540,6 +1639,11 @@ def _cn_tab():
         st.caption("Commodity")
         commodity = st.radio("Commodity", FD.CN_COMMODITIES, key="cn_commodity",
                               label_visibility="collapsed")
+        bean_bids = False
+        if commodity == "Soybeans":
+            st.caption("Soybean price")
+            bean_bids = st.radio("Soybean price", ["CN 105s Beans bids", "Soybeans CIF NOLA"], key="cn_soy_src",
+                                 label_visibility="collapsed").startswith("CN")
     active_cols = [(size, source, FD.CN_RATE_FIELD[(size, source)])
                    for size in sizes for source in sources]
     if not active_cols:
@@ -1558,48 +1662,62 @@ def _cn_tab():
     filtered = sorted((r for r in rows if r["state"] in sel_states and r["tier"] in sel_tiers),
                        key=lambda r: (r["state"], r["origin"], tier_order.index(r["tier"])))
 
-    # ── FOB (CIF netback) sections up top; the raw tariff table moves to the
-    # bottom for reference — Kolten's call, 2026-08-26: the FOB values are
-    # what's actually used day to day, the raw $/car rates are backup detail.
-    cif_error = None
-    as_of, cif, months = None, {}, []
-    if not RVD.configured():
-        cif_error = ("RIVER_DATABASE_URL isn't set, so this can't reach the River FOB Portal's "
-                     "CIF NOLA archive yet. Add it to `.env` locally or as a Streamlit secret.")
+    # ── FOB sections up top; the raw tariff table moves to the bottom for reference — Kolten's call,
+    # 2026-08-26: the FOB values are what's actually used day to day, the raw $/car rates are backup detail.
+    # Corn and (optionally) soybeans net against the CIF NOLA curve. Soybeans can instead use the CN 105s Beans bids
+    # (2026-10-28): the bid is FOB Champaign for a 105-car shuttle, so each 105+ car origin's FOB is that bid
+    # carried by the freight difference from Champaign — bid + freight(Champaign) - freight(origin), like for like
+    # in car size and source.
+    price_error, base_fn, months, labels, legend = None, None, [], [], ""
+    fob_rows, as_of, bids = filtered, None, {}
+    top_tier = FD.CN_VOLUME_TIER_ORDER[-1]
+    if bean_bids:
+        cells, as_of = _bid_cells_for("manual", "CN 105s Beans", sel_date)
+        champ = next((r for r in rows if r["origin"] == "CHAMPAIGN" and r["state"] == "IL" and r["tier"] == top_tier), None)
+        periods = [p for p in _period_union(cells) if cells[p].get("bid") is not None]
+        if not periods:
+            price_error = "No CN 105s Beans bids on or before this posting date yet (change it on the Bids tab)."
+        elif champ is None:
+            price_error = "The tariff has no Champaign, IL 105+ car rate to carry the bean bids from."
+        else:
+            bids = {p: cells[p]["bid"] for p in periods}
+            months = periods
+            labels = [p + (f" · {cells[p]['futures']}" if cells[p].get("futures") else "") for p in periods]
+            base_fn = lambda m, size, field: bids[m] + FD.cn_freight_cpb(champ[field], size, commodity)
+            fob_rows = [r for r in filtered if r["tier"] == top_tier]
+    elif not RVD.configured():
+        price_error = ("RIVER_DATABASE_URL isn't set, so this can't reach the River FOB Portal's "
+                       "CIF NOLA archive yet. Add it to `.env` locally or as a Streamlit secret.")
     else:
         try:
             as_of, cif = RVD.latest_cif(commodity)
         except Exception as e:
-            cif_error = f"Couldn't reach the River FOB Portal's database: {e}"
+            price_error = f"Couldn't reach the River FOB Portal's database: {e}"
         else:
             if not as_of or not cif:
-                cif_error = f"No {commodity} CIF NOLA history found in the River FOB Portal's archive yet."
+                price_error = f"No {commodity} CIF NOLA history found in the River FOB Portal's archive yet."
             else:
                 months = sorted(cif, key=RVD.month_sort_key)
+                labels = months
+                base_fn = lambda m, size, field: cif.get(m)
 
     st.markdown(f"### {commodity} FOB Index by State")
-    if cif_error:
-        st.info(cif_error)
+    if price_error:
+        st.info(price_error)
     else:
-        _cn_state_fob_table(filtered, cif, months, active_cols, commodity)
+        _cn_state_fob_table(fob_rows, base_fn, months, labels, active_cols, commodity,
+                            "bid period" if bean_bids else "CIF month")
 
     st.markdown(f"### {commodity} FOB by Origin")
-    if cif_error:
-        st.info(cif_error)
+    if price_error:
+        st.info(price_error)
+    elif not fob_rows:
+        st.caption("No 105+ car origins in the current filters.")
     else:
         ncols = 1 + len(months)
-        html = _origin_table_open(months, ncols)
-        for r in filtered:
-            variants = [(f"{size} · {source}", FD.cn_freight_cpb(r[field], size, commodity))
-                        for size, source, field in active_cols]
-            label_rows = [(lbl, [None if cif.get(m) is None else cif[m] - frt for m in months])
-                          for lbl, frt in variants]
-            switch_mark = ' <span class="fut-sub">⇄ recip. switch</span>' if r["switch"] else ''
-            html.append(
-                f'<tr class="origin-hdr"><td colspan="{ncols}">{r["state"]} · {r["origin"]}'
-                f'<span class="fut-sub"> &nbsp;{r["tier"] or r["notes"] or ""}</span>{switch_mark}</td></tr>'
-            )
-            html.extend(_variant_value_rows(label_rows))
+        html = _origin_table_open(labels, ncols)
+        for r in fob_rows:
+            html.extend(_cn_origin_block(r, base_fn, months, active_cols, commodity, ncols))
         html.append('</tbody></table>')
         table_html = ''.join(html)
         st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
@@ -1607,15 +1725,25 @@ def _cn_tab():
         bpc = FD.CN_BU_PER_CAR[commodity]
         soy_note = (' (derived from the same car\'s weight capacity as corn, ÷60 lb/bu instead of 56)'
                     if commodity == "Soybeans" else '')
-        st.markdown(
-            f'<div class="legend">FOB(origin) = {commodity} CIF NOLA (as of {as_of}, River FOB '
-            'Portal) − rail freight (¢/bu = $/car ÷ bu/car). Bu/car is by car SIZE only — '
-            f'{bpc["Small"]:,} bu for Small (≤5149 ft³), {bpc["Large"]:,} bu for Large '
-            f'(>5149 ft³){soy_note} — railroad- vs private-supplied doesn\'t change how many '
-            'bushels physically fit. One column per CIF delivery month currently archived; blue = '
-            'the better car size/source for that origin/month.</div>',
-            unsafe_allow_html=True,
-        )
+        bu_note = (f'Bu/car is by car SIZE only — {bpc["Small"]:,} bu for Small (≤5149 ft³), {bpc["Large"]:,} bu for '
+                   f'Large (>5149 ft³){soy_note} — railroad- vs private-supplied doesn\'t change how many bushels '
+                   'physically fit.')
+        if bean_bids:
+            st.markdown(
+                f'<div class="legend">FOB(origin) = the CN 105s Beans bid (FOB Champaign, as of {as_of}, ¢/bu vs the futures '
+                'shown on each column) + rail freight from Champaign − rail freight from the origin (¢/bu = &#36;/car ÷ '
+                f'bu/car), 105+ car tier only, since the bid is for a 105-car shuttle; origins with no 105+ car rate aren\'t '
+                f'shown. {bu_note} One column per bid period posted; blue = the better car size/source for that '
+                'origin/period.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f'<div class="legend">FOB(origin) = {commodity} CIF NOLA (as of {as_of}, River FOB Portal) − rail freight '
+                f'(¢/bu = &#36;/car ÷ bu/car). {bu_note} One column per CIF delivery month currently archived; blue = the '
+                'better car size/source for that origin/month.</div>', unsafe_allow_html=True)
+
+    if not price_error:
+        _cn_location_lookup([r for r in rows if not bean_bids or r["tier"] == top_tier], base_fn, months, labels, active_cols,
+                            commodity)
 
     st.markdown("### Raw CN Gulf Export Rates")
     html = ['<table class="sheet"><tbody><tr>',
@@ -2701,7 +2829,7 @@ with bn_tab:
     REF.render("BN", _diesel_weekly)
 
 with cn_tab:
-    _cn_tab()
+    _cn_tab(_manual_date)
     REF.render("CN", _diesel_weekly)
 
 with up_tab:

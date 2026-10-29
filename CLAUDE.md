@@ -41,6 +41,25 @@ in app.py (`_bn_infer_quote`, a (bid, offer) pair from ONE posting; display only
 LH Nov can't drag Nov down) > FH/LH average (or the lone half) > the containing package (AM and JJ from AMJJ) > for Oct/Nov/Dec the OND package, reverse-averaged against Oct. The
 secondary freight sheet draws the shuttle quotes in the delivered board's grid format (periods across, bid with the offer in blue, BNSF / as-of chips).
 
+## CN soybeans on the CN 105s Beans bids (2026-10-28)
+
+With Soybeans picked on the CN tab, a "Soybean price" switch chooses what the freight comes off: the CN 105s Beans bids (default) or Soybeans CIF NOLA (the earlier netback, kept). The bean bids are the rail bid archive's market
+`CN 105s Beans` (`JSA.BASIS_TRACKER.rail_fob`, posted as "CN YSB 105's (FOB Champ)", cents vs the futures tag on each period, forward periods since Aug 2026; read through the Bids tab's posting date like the BN tab). The bid is FOB
+Champaign for a 105-car shuttle, so each origin's FOB = bid + freight(Champaign, IL, 105+ cars) − freight(origin, 105+ cars), like for like in car size and source and in soybean ¢/bu — only origins with a 105+ car rate appear.
+`_cn_state_fob_table` and the by-origin table take a `base_fn(period, size, rate field)`, so the CIF path and the bid path share them. Corn still uses CIF NOLA only. "FOB Champaign" comes from the basis tracker's paste notes
+(`rail_paste.py`); confirm with Kolten if the bid's reference origin is ever in doubt.
+
+## FOB at any BN / CN location (2026-10-28) — `bn_locator.py`, `tests/test_bn_locator.py`
+
+Under "FOB by Origin" on the BN tab, **FOB at Any BN Location** is a dropdown of every origin on the BNSF price list (197, plus the 13 seeded origins) that renders the same table for one origin (`_bn_fob_by_origin` with `legend=False`).
+The freight sheet only has 13 origins with face rates and lane miles; for the rest: face rate = the price list's `DEST GRP 50 PNW` 286K / 5,001+ cu ft column **+ $200** (exact for all 7 seeded origins on the list); Hereford = the list's column + an
+**adder** (the sheet's Hereford rates run $0–$200 over the list, varying by origin, so their average — $90 — is the editable default); **miles are estimated from the BNSF shippers directory's coordinates**:
+miles = a + b × great-circle miles to a fixed point (PNW: Spokane; Hereford: a point in southern Kansas, since the lane runs through Kansas and a straight line to Hereford, TX fits far worse), constants fitted to the 13 seeded origins (`LANES`;
+RMS ~65–70 miles ≈ 1¢/bu; the test refits it). Origins outside the fitted area (`CAL_BOX`, about MN/SD/NE/IA/IL) get a rougher-estimate warning; origins with no coordinates in the directory (24) show "—" until miles are typed; a typed mileage wins.
+Seeded origins use the sheet's own rates and miles. `freight_data.bn_build_row` is the shared freight build (a lane with no rate or miles has no freight). The shippers directory abbreviates stations to 9 characters — `bn_locator._station_key`.
+The CN tab has **FOB at Any CN Location** the same way (`_cn_location_lookup`): one tariff origin from a dropdown, all its volume tiers; CN's tariff rates are flat $/car, so no miles. CN's FSC (mileage-based, `rail_fsc`) is NOT in the CN freight yet — the estimator could supply its miles if it is added.
+29 of the CN shipper directory's 96 locations (e.g. Kankakee, Heyworth) have no rate of their own in the tariff and aren't offered.
+
 ## Railroad reference (2026-10-28) — `rail_reference.py`, `rail_fsc.py`, `data/rail_directory/`
 
 Under each railroad tab (CSX, NS, BN, CN, and a UP tab after CN) `rail_reference.render(rr, weekly)` draws two kinds of collapsed expander. Each loads only when opened (`st.expander(on_change="rerun")` + `.open`; an
