@@ -117,6 +117,16 @@ def main():
         if r.get("lat") is None:
             continue
         pts["shipper"].append({"name": r["name"], "state": r["state"], "road": "CN", "lat": round(r["lat"], 4), "lon": round(r["lon"], 4)})
+    up_miss = []
+    for r in _load(os.path.join(DIR, "up_shuttle.json"))["origins"]:            # UP's grain shuttle loaders (program 4052-A, as issued Oct 2023)
+        city = re.sub(r"\s*\(.*$", "", r["city"]).strip()                          # "ALBION (NCRC)": the short line serving it is in the name
+        p = gaz.get((r["state"], _norm(city))) or place.get(f'{city.upper()}|{r["state"]}')
+        if p:
+            pts["shipper"].append({"name": r["company"].title(), "state": r["state"], "road": "UP", "lat": round(p[0], 4), "lon": round(p[1], 4),
+                                   "cars": r["cars"], "shuttle": True})
+        else:
+            up_miss.append(f'{r["company"]} ({r["city"]}, {r["state"]})')
+    print("UP loaders with no coordinates:", up_miss)
     for road, f in (("CSX", "csx_shippers"), ("NS", "ns_loaders")):
         for r in _load(os.path.join(DIR, f + ".json"))["rows"]:
             p = gaz.get((r["state"], _norm(r["city"]))) or place.get(f'{r["city"].upper()}|{r["state"]}')
