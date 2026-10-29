@@ -16,6 +16,7 @@ import requests
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.join(HERE, "data", "rail_directory")
+TRACKER = os.path.join(HERE, "..", "basis-tracker-streamlit")
 MISC = r"C:\Users\KoltenPostin\John Stewart and Associates\JSA - Documents\Research Analyst\Misc"
 ETHANOL_XLSX = os.path.join(MISC, "Ethanol", "PRX Corn Plant List - All.xlsx")
 CRUSH_XLSX = os.path.join(MISC, "Crush", "Crush Plant Data.xlsx")
@@ -113,7 +114,7 @@ UPDATES = [
 
 
 def main():
-    pts = {"crush": [], "ethanol": [], "shipper": []}
+    pts = {"crush": [], "ethanol": [], "shipper": [], "river": []}
     gaz = _gazetteer()
     miss = []
     eth = pd.read_excel(ETHANOL_XLSX, header=1)
@@ -123,6 +124,14 @@ def main():
     cr = pd.read_excel(CRUSH_XLSX, sheet_name=0)
     for _, r in cr.iterrows():
         _add(pts["crush"], gaz, miss, r["COMPANY"], r["ST"], r["CITY"], r.get("STATUS"), mbu=_num(r.get("ANNUAL CAPACITY"), 1e6))
+    # river loading facilities: the basis tracker's River Terminal tags joined to its geocoded pins (its archive of every location it has bid)
+    coords = {(c["provider"], c["location"]): c for c in _load(os.path.join(TRACKER, "coords_seed.json"))}
+    for t in _load(os.path.join(TRACKER, "facility_tags_seed.json")):
+        c = coords.get((t["provider"], t["location"]))
+        if t["facility_type"] == "River Terminal" and c and c.get("lat") is not None:
+            pts["river"].append({"name": t["location"] if t["location"].startswith(t["provider"]) else f'{t["provider"]} {t["location"]}',
+                                 "state": t.get("state") or c.get("state") or "",
+                                 "lat": round(c["lat"], 4), "lon": round(c["lon"], 4)})
     pts["crush"].extend(EXTRA_CRUSH)
     pts["ethanol"].extend(EXTRA_ETHANOL)
     for u in UPDATES:
