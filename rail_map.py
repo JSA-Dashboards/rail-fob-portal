@@ -51,8 +51,33 @@ def _line_xy(paths, step=0.1):
     return lon, lat
 
 
-def build_figure(rails, rivers, show_crush, show_ethanol, shipper_roads, height=720):
+CROP_SCALES = {"Corn": "YlOrBr", "Soybeans": "Greens", "Wheat": "Purples"}
+
+
+def _production_layer(crop):
+    """County choropleth of the 5-year average NASS production for a crop (bushels; withheld counties already filled)."""
+    prod = _load("county_prod_avg.json")
+    avg = prod["avg"][crop]
+    fips = list(avg)
+    vals = [avg[f] for f in fips]
+    top = float(sorted(vals)[int(len(vals) * 0.97)])          # cap the scale at the 97th percentile so a few giants don't wash the rest out
+    yrs = prod["years"][crop]
+    return go.Choroplethmap(
+        geojson=_load("county_geo.json"), locations=fips, z=vals, zmin=0, zmax=top, colorscale=CROP_SCALES[crop],
+        marker=dict(opacity=0.65, line=dict(width=0.2, color="rgba(90,90,90,0.5)")),
+        colorbar=dict(title=dict(text=f"{crop}<br>5-yr avg bu<br>{yrs[0]}-{yrs[-1]}"), thickness=12, len=0.45, y=0.2, x=0.995),
+        customdata=[[prod["names"].get(f, f), f"{v / 1e6:,.2f}"] for f, v in zip(fips, vals)],
+        hovertemplate="%{customdata[0]}<br>" + crop + " 5-yr avg: %{customdata[1]} M bu<extra></extra>", name=f"{crop} 5-yr avg")
+
+
+def build_figure(rails, rivers, show_crush, show_ethanol, shipper_roads, height=720, crop=None, states=True):
     fig = go.Figure()
+    if crop:
+        fig.add_trace(_production_layer(crop))
+    if states:
+        lon, lat = _line_xy(_load("state_lines.json"), step=0)
+        fig.add_trace(go.Scattermap(lon=lon, lat=lat, mode="lines", line=dict(width=1, color="#555"), name="State lines",
+                                    hoverinfo="skip"))
     lines = _load("rail_lines.json")
     if rivers:
         water = _load("waterways.json")
@@ -93,10 +118,13 @@ def render():
         rivers = st.checkbox("Highlight grain rivers", value=True, key="railmap_rivers")
         crush = st.checkbox("Crush plants", value=True, key="railmap_crush")
         ethanol = st.checkbox("Ethanol / corn processing", value=True, key="railmap_eth")
+    crop = c1.selectbox("County production overlay (5-yr avg)", [None, "Corn", "Soybeans", "Wheat"], key="railmap_crop",
+                        format_func=lambda c: "None" if c is None else c)
+    states = c2.checkbox("State boundaries", value=True, key="railmap_states")
     shippers = c3.multiselect("Grain shippers by railroad", list(SHIPPER_COLORS), default=list(SHIPPER_COLORS), key="railmap_ship")
-    st.plotly_chart(build_figure(rails, rivers, crush, ethanol, shippers), use_container_width=True, key="railmap_fig")
+    st.plotly_chart(build_figure(rails, rivers, crush, ethanol, shippers, crop=crop, states=states), use_container_width=True, key="railmap_fig")
     st.caption("Rail lines: US DOT BTS North American Rail Network (NTAD); rivers: USACE navigable waterway network via BTS NTAD (2018). "
                "Shippers: BNSF and CN directories with coordinates; CSX and NS only where the station's city is geocoded. "
-               "Crush / ethanol markers are the basis tracker's tagged plants. "
+               "County overlay: NASS county production, 5-year average of the last five crop years (counties NASS withheld are filled by the basis tracker's heat builder). Crush and ethanol markers are JSA's plant lists, placed by city. "
                "[CN GeoMapGuide](https://cnebusiness.geomapguide.ca/) · [TPW](https://www.gwrr.com/railroads/toledo-peoria-and-western-railway) · "
                "[Iowa Interstate](https://iaisrr.com/ship-with-iais/what-where-how/) · [Watco system map](https://www.watco.com/system-map/)")
