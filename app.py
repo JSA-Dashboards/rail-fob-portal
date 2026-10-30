@@ -357,6 +357,17 @@ if not RD.configured():
         "tracker's archive yet. Add it to `.env` locally or as a Streamlit "
         "secret to see live data."
     )
+    # Which settings this app can see — names only, never values — so a missing or misnamed secret shows up at a glance.
+    _seen = []
+    for _k in ("USE_SNOWFLAKE", "SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_ROLE", "SNOWFLAKE_WAREHOUSE",
+               "SNOWFLAKE_PRIVATE_KEY", "SNOWFLAKE_PASSWORD"):
+        try:
+            _has = bool(os.environ.get(_k)) or (_k in st.secrets)
+        except Exception:
+            _has = bool(os.environ.get(_k))
+        _seen.append(f"{'✅' if _has else '❌'} `{_k}`")
+    st.caption("Settings this app can see: " + " · ".join(_seen) + ". `USE_SNOWFLAKE` must be `1` (or `true`) and sit at the top "
+               "level of the secrets, not under a [section]; the secrets need a reboot after a change.")
     st.stop()
 
 
