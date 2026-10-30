@@ -348,7 +348,8 @@ st.markdown(
 )
 
 if _view_only():
-    st.caption("View only")
+    st.info("👁 **View-only version.** Everything here is read-only: the bids update as JSA posts them, and the freight inputs "
+            "(BN shuttle quotes, fuel-surcharge months) are maintained by JSA.")
 
 if not RD.configured():
     st.warning(
