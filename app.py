@@ -3493,10 +3493,13 @@ _CORE_STATES = ("IA", "IL", "IN", "MI", "MN", "ND", "NE", "OH", "SD")
 @st.fragment
 def _summary_tab(sel_date):
     st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab. State-indexed FOB (¢/bu, the best origin in each state) for "
-               "every rail corridor, one table per delivery month for the next five.")
-    include_current = st.checkbox("Start with the current month", value=False, key="sum_cur",
-                                  help="Off: the five months after this one. On: this month and the next four.")
+               "every rail corridor, one table per delivery month: the front month and the four after it.")
     today = date.today()
+    # The front month is the current month, always (Kolten, 2026-11-02: "November as the front month and then the 4 months to follow",
+    # then "default with showing the current month").
+    include_current = st.checkbox("Start with the current month", value=True, key="sum_cur",
+                                  help="On (the default): this month is the front month, then the next four. Off: the five months "
+                                       "after this one.")
     first = today.month if include_current else today.month % 12 + 1
     months = [(((first - 1 + k) % 12) + 1, calendar.month_abbr[((first - 1 + k) % 12) + 1]) for k in range(5)]
     cn_src = st.radio("CN price", ["CN 105s bids", "CIF NOLA netback"], horizontal=True, key="sum_cn_src",
