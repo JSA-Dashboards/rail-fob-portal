@@ -1635,13 +1635,16 @@ def _bn_quote(cells_by_dest, overrides, dest, p):
     return _bn_effective_quote(cells_by_dest[dest], p), False
 
 
-def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=True, by_state=False, name="bn_fob_by_origin"):
+def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=True, by_state=False, name="bn_fob_by_origin", eth=None):
     """FOB (¢/bu) per origin, PNW | Hereford side by side under each of the headline periods, in the layout of
     Kolten's "FOB BN" sheet (2026-10-28): the bid in a yellow row, the BN Car Val / FSC per Mi row, and the
     better destination for each origin shaded (the geographical PNW-Hereford divide). by_state: one row per state, each
-    cell the BEST FOB among that state's origins (an index, not any one origin)."""
+    cell the BEST FOB among that state's origins (an index, not any one origin). eth: the state ethanol index ({state: {(y, m): (basis, plants)}},
+    _ethanol_index) — one more column per period, in grey italics, for the row's state: a benchmark, never shaded."""
     periods = list(_BN_TARGET_MONTHS)
     n = len(active)
+    ne = 1 if eth else 0
+    today = date.today()
     by_key = {w["key"]: w for w in window}
 
     def month_win(p):
@@ -1664,18 +1667,19 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
 
     html = ['<table class="sheet"><tbody>',
             '<tr><th class="title" rowspan="3">FOB BN</th>'
-            + ''.join(f'<th class="grp gl" colspan="{n}">{p}</th>' for p in periods) + '</tr>',
-            '<tr>' + ''.join(f'<th class="sub{gl(i)}">{dest}</th>'
-                             for _ in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
-            '<tr>' + ''.join(f'<td class="bidrow{" ovr" if quote(dest, p)[1] else ""}{gl(i)}">{quote_html(quote(dest, p)[0])}</td>'
-                             for p in periods for i, (dest, _s) in enumerate(active)) + '</tr>',
+            + ''.join(f'<th class="grp gl" colspan="{n + ne}">{p}</th>' for p in periods) + '</tr>',
+            '<tr>' + ''.join(''.join(f'<th class="sub{gl(i)}">{dest}</th>' for i, (dest, _s) in enumerate(active))
+                             + ('<th class="sub">Ethanol</th>' if eth else '') for _ in periods) + '</tr>',
+            '<tr>' + ''.join(''.join(f'<td class="bidrow{" ovr" if quote(dest, p)[1] else ""}{gl(i)}">{quote_html(quote(dest, p)[0])}</td>'
+                                     for i, (dest, _s) in enumerate(active))
+                             + ('<td class="bidrow">plant avg</td>' if eth else '') for p in periods) + '</tr>',
             '<tr class="carsrow"><td class="lbl">BN Car Val / FSC per Mi</td>']
     for p in periods:
         w = month_win(p)
         cars = "—" if w is None else f"{w['cars']:,.0f}"
         fsc = "—" if w is None else f"{w['fsc_per_mile']:.2f}"
         core = [d for d, _s in active if d != "COBO"]
-        cells = ([cars, fsc] if len(core) == 2 else [f"{cars} / {fsc}"] if len(core) == 1 else []) + (["—"] if len(core) < n else [])
+        cells = ([cars, fsc] if len(core) == 2 else [f"{cars} / {fsc}"] if len(core) == 1 else []) + (["—"] if len(core) < n else []) + (["—"] if eth else [])
         html.append(''.join(f'<td class="gl">{c}</td>' if i == 0 else f'<td>{c}</td>' for i, c in enumerate(cells)))
     html.append('</tr>')
     groups = [(r["origin"], [r]) for r in rows]
@@ -1704,6 +1708,12 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
             for i, v in enumerate(vals):
                 txt, neg = _bn_fob_cell(v)
                 grid.append(f'<td class="fobv{neg}{" divide" if i == bi else ""}{gl(i)}">{txt}</td>')
+            if eth:
+                st_ = label if by_state else grp[0].get("state")
+                mo = FD.bn_period_first_month(p)
+                hit = EI.lookup(eth, st_, mo, today) if mo and st_ else None
+                txt, _neg = _bn_fob_cell(None if hit is None else hit[0])
+                grid.append(f'<td class="fobv" style="font-style:italic;color:#64748b">{txt}</td>')
         html.append(f'<tr><td class="lbl">{label}</td>' + ''.join(grid) + '</tr>')
     html.append('</tbody></table>')
     table_html = ''.join(html)
@@ -1715,7 +1725,8 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
         '<div class="legend">BN COBO is the bid less the California tariff only (Hereford face + &#36;960 a car, per USDA AMS) — the COBO buyer takes the car cost and fuel surcharge. ¢/bu, bid − freight: negatives in parentheses; a dotted underline marks a bid typed in BN freight inputs. The yellow row is the bid / offer used (a Split '
         "month, FH+LH averaged or the OND / AMJJ package filled in where that period wasn't posted). BN Car Val is the "
         'secondary-market shuttle bid in &#36;/car (Hereford takes half) and FSC is &#36;/mile, both from the inputs '
-        'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide).</div>',
+        'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide). Ethanol (grey) is the state\'s ethanol '
+        'plant index — the Basis Tracker\'s Corn Processing plants\' average corn basis for the period\'s first month — a benchmark, never shaded.</div>',
         unsafe_allow_html=True)
 
 
@@ -1736,7 +1747,7 @@ def _bn_all_rows(window):
     return out
 
 
-def _bn_location_lookup(active, cells_by_dest, window, overrides):
+def _bn_location_lookup(active, cells_by_dest, window, overrides, eth=None):
     """FOB for ANY origin on the BNSF price list (Kolten, 2026-10-28), not only the sheet's 13: its face rates from the price
     list, lane miles estimated from the BNSF shippers directory's coordinates (bn_locator.py) — both editable here — then the
     same freight and FOB as the table above."""
@@ -1761,9 +1772,9 @@ def _bn_location_lookup(active, cells_by_dest, window, overrides):
                                 help="The sheet's Hereford face rates run \\$0-\\$200 a car over the price list's, "
                                      "varying by origin; this is their average. Edit it if you know better.")
         herf_rate = o["herf_list"] + adder
-    row = FD.bn_build_row({"origin": f"{pick.title()[:-2]}{o['state']}", "pnw_rate": o["pnw_rate"], "pnw_miles": pm,
+    row = FD.bn_build_row({"origin": f"{pick.title()[:-2]}{o['state']}", "state": o["state"], "pnw_rate": o["pnw_rate"], "pnw_miles": pm,
                            "herf_rate": herf_rate, "herf_miles": hm}, window)
-    _bn_fob_by_origin([row], active, cells_by_dest, window, overrides, legend=False)
+    _bn_fob_by_origin([row], active, cells_by_dest, window, overrides, legend=False, eth=eth)
 
     def src(est, typed):
         if o["seeded"]:
@@ -1792,10 +1803,12 @@ def _bn_location_lookup(active, cells_by_dest, window, overrides):
 
 def _bn_tab(sel_date):
     st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab.")
-    dest_cols = st.columns(len(FD.BN_DESTINATIONS))
+    dest_cols = st.columns(len(FD.BN_DESTINATIONS) + 1)
     show = {}
     for (dest, spec), c in zip(FD.BN_DESTINATIONS.items(), dest_cols):
         show[dest] = c.checkbox(dest, value=True, key=f"bn_f_{spec['field']}")
+    eth = _ethanol_index() if dest_cols[-1].checkbox("Ethanol index", value=True, key="bn_f_eth",
+                                                      help="The state's ethanol plant index (Basis Tracker) beside each period — a benchmark.") else None
     active = [(dest, spec) for dest, spec in FD.BN_DESTINATIONS.items() if show[dest]]
     if not active:
         st.info("Select at least one destination to filter on.")
@@ -1822,7 +1835,7 @@ def _bn_tab(sel_date):
     if any(cells_by_dest.values()):
         overrides = BNI.bid_overrides(inputs["payload"])
         all_rows = _bn_all_rows(window)
-        _bn_fob_by_origin(all_rows, active, cells_by_dest, window, overrides, legend=False, by_state=True, name="bn_state_index")
+        _bn_fob_by_origin(all_rows, active, cells_by_dest, window, overrides, legend=False, by_state=True, name="bn_state_index", eth=eth)
         est = sum(1 for o in _bn_lookup_origins()[0].values() if not o["seeded"]
                   and any(o[f"{lane}_rate"] is not None and o[f"{lane}_miles"] is not None for lane in ("pnw", "herf")))
         st.caption(f"Best (highest) FOB among every BNSF location in the state — the sheet's {len(rows)} origins plus {est} more from the BNSF "
@@ -1830,8 +1843,8 @@ def _bn_tab(sel_date):
                    "coordinates (about ±70 miles, ~1¢/bu; rougher outside MN / SD / NE / IA / IL) — an index, not any single origin's "
                    "number. Shaded = the better destination for that state / period.")
         st.markdown("### Key Corridors — Highlighted Origins")
-        _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides)
-        _bn_location_lookup(active, cells_by_dest, window, overrides)
+        _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, eth=eth)
+        _bn_location_lookup(active, cells_by_dest, window, overrides, eth=eth)
     else:
         st.caption("No BN PNW/Hereford postings on or before this date yet.")
 
@@ -3303,7 +3316,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
 
     # ---- CSX: Columbus and Evansville, no fuel surcharge (noted on its tab)
     csx = FD.load_csx()
-    for label, market, field in (("CSX Columbus", "CSX Columbus", "columbus"), ("CSX Evansville", "CSX Evansville", "eville_altkyla")):
+    for label, market, field in (("CSX COL", "CSX Columbus", "columbus"), ("CSX Eville", "CSX Evansville", "eville_altkyla")):
         cells, _eff = _bid_cells_for("manual", market, sel_date)
         quotes = {m: _month_quote(cells, m) for m, _l in months}
 
@@ -3328,7 +3341,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
             return None
         vals = [q[0] - f for r in ns if r["state"] == state for f in (fn(r, labels[m]) for fn in ns_fns.values()) if f is not None]
         return max(vals) if vals else None
-    corridors.append({"label": "NS Ft Wayne", "bid": lambda m: bid_text(ns_quotes.get(m)), "fob": ns_fob,
+    corridors.append({"label": "NS", "bid": lambda m: bid_text(ns_quotes.get(m)), "fob": ns_fob,
                       "states": {r["state"] for r in ns}})
     notes.append("NS: 105-car-eligible origins, the cheapest of its three regions, with NS's fuel surcharge on the extra miles vs Ft Wayne.")
 
@@ -3340,6 +3353,9 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
     overrides = BNI.bid_overrides(inputs["payload"])
     cells_by_dest = {dest: _bid_cells_for("manual", spec["market"], sel_date)[0] for dest, spec in FD.BN_DESTINATIONS.items()}
     for dest, spec in FD.BN_DESTINATIONS.items():
+        if dest == "COBO":            # COBO stays on the BN tab; the summary compares PNW and Hereford (Kolten, 2026-11-02)
+            continue
+
         def bn_quote(m, dest=dest):
             lbl = labels[m]
             if lbl in _BN_TARGET_MONTHS:                       # Oct / Nov / Dec: the BN tab's own inference and typed bids
@@ -3383,7 +3399,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
         if not g and not i:
             return "—"
         return " / ".join(f"{n} {q[0]:+.0f}" + ("*" if q[2] != "month" else "") for n, q in (("G3", g), ("IIA", i)) if q)
-    corridors.append({"label": "UP Group 3 / Interior IA", "bid": up_bid, "fob": up_fob, "states": {"NE", "IA", "MN", "IL"}})
+    corridors.append({"label": "UP", "bid": up_bid, "fob": up_fob, "states": {"NE", "IA", "MN", "IL"}})
     notes.append("UP: each state's best origin on Group 3 or Interior IA (named origins at their stated discounts, the rest par to the base), "
                  "IL from Allen Station's own bids.")
 
@@ -3421,7 +3437,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
                 if f is not None:
                     vals.append(q[0] + f_champ - f)
             return max(vals) if vals else None
-        corridors.append({"label": "CN 105s (FOB Champaign)", "bid": lambda m: bid_text(quotes.get(m)), "fob": cn_fob,
+        corridors.append({"label": "CN 105s", "bid": lambda m: bid_text(quotes.get(m)), "fob": cn_fob,
                           "states": {r["state"] for r in cn}})
         notes.append("CN: the CN 105s corn bid (FOB Champaign) carried to each origin by the freight difference — 105+ car shuttle origins, large "
                      "railroad cars, tariff at USDA's level plus CN's fuel surcharge on estimated miles.")
@@ -3443,7 +3459,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
                     if f is not None:
                         vals.append(price - f)
                 return max(vals) if vals else None
-            corridors.append({"label": "CN Gulf (CIF NOLA)",
+            corridors.append({"label": "CN CIF NOLA",
                               "bid": lambda m: "—" if cif.get(labels[m]) is None else f"{cif[labels[m]]:+.0f}",
                               "fob": cn_fob, "states": {r["state"] for r in cn}})
             why = "" if cn_src.startswith("CIF") else " (no CN 105s bids on or before this posting date, so the CIF NOLA netback is shown)"
@@ -3463,7 +3479,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
         def eth_bid(m):
             n = sum((EI.lookup(eth, st_, m, today) or (0, 0))[1] for st_ in eth)
             return f"{n} plants" if n else "—"
-        corridors.append({"label": "Ethanol plant index (benchmark)", "benchmark": True, "bid": eth_bid, "fob": eth_fob, "states": set(eth)})
+        corridors.append({"label": "Ethanol Index", "benchmark": True, "bid": eth_bid, "fob": eth_fob, "states": set(eth)})
         notes.append("Ethanol plant index: the average corn basis (¢ vs futures) of the Basis Tracker's Corn Processing plants in the state, "
                      "from each plant's latest bid for the month — a benchmark, so it is never shaded as the best corridor.")
     return corridors, notes
