@@ -3569,8 +3569,8 @@ def _summary_tab(sel_date):
                 'corridor, or no origin in the state. ' + " ".join(notes) + '</div>', unsafe_allow_html=True)
 
 
-bids_tab, summary_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, refs_tab, ship_tab, carry_tab = st.tabs(
-    ["📋 Bids", "📊 State Summary", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "🔗 References", "📦 Shipments", "💵 Net Carry"])
+bids_tab, summary_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, ship_tab, refs_tab, carry_tab = st.tabs(
+    ["📋 Bids", "📊 State Summary", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "📦 Shipments", "🔗 References", "💵 Net Carry"])
 _diesel_weekly = _bn_auto_fsc()[1]
 
 with bids_tab:

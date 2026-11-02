@@ -266,3 +266,4 @@ A `return` that slid into an `else:` crashed the State Summary only when CN 105s
 
 ## Disclaimer (2026-11-02, Kolten: "add disclaimer to bottom of each page on dashboard")
 `_render_disclaimer()` draws JSA's standard compliance disclaimer (the River FOB Portal's wording, which is also the tracker emails' signature text; the year is the calendar year) as the LAST thing on the page, after all the tab blocks — so it sits at the bottom whichever tab is open — and on the not-configured notice page too. It is identical in the view-only build. No wording was supplied, so the existing standard text was reused; change it in `_render_disclaimer`.
+- **Tab order (2026-11-02, Kolten: "move Shipments to the right of Map")**: Bids, State Summary, CSX, NS, BN, CN, UP, Map, Shipments, References, Net Carry. The carrier logos stay on tabs 3-7 (CSX / NS / BN / CN / UP), which this move doesn't touch.
