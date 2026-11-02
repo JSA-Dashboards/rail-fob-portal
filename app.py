@@ -19,7 +19,7 @@ import json
 import os
 import re
 from collections import Counter
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from html import escape as _esc
 from pathlib import Path
 
@@ -33,6 +33,7 @@ import bn_fsc as BNF
 import bn_inputs as BNI
 import bn_locator as BL
 import cn_miles as CM
+import ethanol_index as EI
 import ns_miles as NSM
 import freight_data as FD
 import rail_data as RD
@@ -135,6 +136,9 @@ CSX_LOGO_URI = _asset_uri("csx_logo.svg")
 NS_LOGO_URI = _asset_uri("ns_logo.svg")
 BNSF_LOGO_URI = _asset_uri("bnsf_logo.svg")
 CN_LOGO_URI = _asset_uri("cn_logo.svg")
+UP_LOGO_URI = _asset_uri("up_logo.svg")       # "" until assets/up_logo.svg exists (then the UP tab, #7, shows it)
+UP_LOGO_RULE = (f'[role="tab"]:nth-of-type(7) p::before {{ content: ""; display: inline-block; width: 26px; height: 16px; '
+                f"background: url('{UP_LOGO_URI}') no-repeat center / contain; }}" if UP_LOGO_URI else "")
 
 JPSI_DARK = "#32373c"
 JPSI_BLUE = "#0693e3"
@@ -330,6 +334,7 @@ st.markdown(
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{CN_LOGO_URI}') no-repeat center / contain;
       }}
+      {UP_LOGO_RULE}
     </style>
     """,
     unsafe_allow_html=True,
@@ -614,11 +619,17 @@ def _sheet_board(source, sections, key, other_keep=None):
     return sel_date
 
 
+def _rnd(v):
+    """A whole number, halves away from zero (Python's round() takes halves to even): FOB values show without decimals (Kolten, 2026-11-02)."""
+    n = int(abs(v) + 0.5)
+    return -n if v < 0 else n
+
+
 def _fob_cell(v, better=False):
     if v is None:
         return '<td>—</td>'
     cls = ' class="better"' if better else ''
-    return f'<td{cls}>{v:+.1f}</td>'
+    return f'<td{cls}>{_rnd(v):+d}</td>'
 
 
 def _bid_cells_for(source, market, sel_date):
@@ -647,7 +658,7 @@ def _fob_cell_int(v, better=False):
     if v is None:
         return '<td>—</td>'
     cls = ' class="better"' if better else ''
-    return f'<td{cls}>{round(v):+d}</td>'
+    return f'<td{cls}>{_rnd(v):+d}</td>'
 
 
 def _variant_value_rows(label_rows, cell_fn=_fob_cell, row_label_fn=lambda lbl: f'via {lbl}'):
@@ -804,7 +815,7 @@ def _state_fob_table(rows, variant_fields, bid_cells_map, periods, state_key="st
                 for i, v in enumerate(row):
                     if v is not None and (vals[i] is None or v > vals[i]):
                         vals[i] = v
-            cells = ''.join(f'<td>{round(v):+d}</td>' if v is not None else '<td>—</td>' for v in vals)
+            cells = ''.join(f'<td>{_rnd(v):+d}</td>' if v is not None else '<td>—</td>' for v in vals)
             html.append(f'<tr><td class="lbl">{s}</td>{cells}</tr>')
     html.append('</tbody></table>')
     table_html = ''.join(html)
@@ -904,7 +915,7 @@ def _csx_fob_by_corridor(rows, active, periods, fsc_by_p, name, title="FOB CSX")
 def _csx_flag_note(flagged):
     if flagged:
         st.caption("* Evansville's rate depends on the unit train's downstream market — "
-                   + "; ".join(f"{loc} (GA/FL {g:+.1f}¢ vs AL/TN/KY/LA {a:+.1f}¢ used)" for loc, g, a in flagged) + ".")
+                   + "; ".join(f"{loc} (GA/FL {_rnd(g):+d}¢ vs AL/TN/KY/LA {_rnd(a):+d}¢ used)" for loc, g, a in flagged) + ".")
 
 
 def _csx_origin_rows(origins, label_fn):
@@ -1140,7 +1151,7 @@ def _ns_origin_block(r, active, ftw_cells, periods, ncols, fns):
         fs = [f for f in (fns[field](r, p) for _, field in active) if f is not None]
         return min(fs) if fs else None
     first = next((v for v in (best(p) for p in periods) if v is not None), None)
-    desc = "" if first is None else f"best freight {first:.1f}¢"
+    desc = "" if first is None else f"best freight {_rnd(first)}¢"
     flag = ' <span class="fut-sub">(105-car eligible)</span>' if r["flag_105"] else ""
     return [f'<tr class="origin-hdr"><td colspan="{ncols}">{r["state"]} · {_loc_label(r["origin"])}'
             f'<span class="fut-sub"> &nbsp;{desc}</span>{flag}</td></tr>'] + \
@@ -1596,7 +1607,7 @@ def _bn_inputs_section(state, auto, weekly, diesel_err):
     st.dataframe(preview, hide_index=True, width="stretch",
                  column_config={"FSC $/mile": st.column_config.NumberColumn(format="%.2f"),
                                 "BN Cars $/car (PNW)": st.column_config.NumberColumn(format="%.0f"),
-                                "Hereford (÷ 2)": st.column_config.NumberColumn(format="%.1f")})
+                                "Hereford (÷ 2)": st.column_config.NumberColumn(format="%.0f")})
     for p in BNI.problems(new_payload):
         st.warning(p)
 
@@ -1612,7 +1623,8 @@ def _bn_fob_cell(v):
     """Accountant style, as on Kolten's sheet: negatives in parentheses (red), no plus sign."""
     if v is None:
         return "—", ""
-    return (f"({abs(v):.1f})", " neg") if v < 0 else (f"{v:.1f}", "")
+    n = _rnd(v)
+    return (f"({abs(n)})", " neg") if n < 0 else (f"{n}", "")
 
 
 def _bn_quote(cells_by_dest, overrides, dest, p):
@@ -1877,8 +1889,8 @@ def _bn_tab(sel_date):
                 f'<tr><td class="lbl">{r["origin"]}</td>'
                 f'<td>{r["pnw_rate"]:,.0f}</td><td>{r["pnw_miles"]:,.0f}</td>'
                 f'<td>{r["herf_rate"]:,.0f}</td><td>{r["herf_miles"]:,.0f}</td>'
-                + ''.join(f'<td>{r["pnw_cpb"][w["key"]]:.1f}</td>' for w in window)
-                + ''.join(f'<td>{r["hereford_cpb"][w["key"]]:.1f}</td>' for w in window)
+                + ''.join(f'<td>{_rnd(r["pnw_cpb"][w["key"]])}</td>' for w in window)
+                + ''.join(f'<td>{_rnd(r["hereford_cpb"][w["key"]])}</td>' for w in window)
                 + '</tr>')
         html.append('</tbody></table>')
         table_html = ''.join(html)
@@ -2191,7 +2203,7 @@ def _cn_tab(sel_date):
         letter = _CN_LETTER[field]
         mark = ' <span class="fut-sub">(C)</span>' if letter.lower() in (r.get("changed") or ()) else ''
         cpb = FD.cn_freight_cpb(v, size, commodity)
-        return f'<td>{cpb:.1f}¢/bu{mark}<br><span class="fut-sub">&#36;{v:,.0f}/car</span></td>'
+        return f'<td>{_rnd(cpb)}¢/bu{mark}<br><span class="fut-sub">&#36;{v:,.0f}/car</span></td>'
 
     for r in filtered:
         switch_mark = ' <span class="fut-sub">⇄ recip. switch</span>' if r["switch"] else ''
@@ -2242,7 +2254,7 @@ def _expanded_freight_table(rows, state_key, label_cols, variants, name="all_ori
     for r in ordered:
         cells = [f'<td class="lbl">{r[state_key]}</td>']
         cells += [f'<td class="lbl">{fn(r)}</td>' for _, fn in label_cols]
-        cells += [f'<td>{r[f]:+.1f}</td>' for _, f in active]
+        cells += [f'<td>{_rnd(r[f]):+d}</td>' for _, f in active]
         if len(active) > 1:
             best_lbl = min(active, key=lambda lf: r[lf[1]])[0]
             cells.append(f'<td class="lbl">{best_lbl}</td>')
@@ -3263,6 +3275,19 @@ def _month_quote(cells, month):
     return None
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _ethanol_index():
+    """{state: {(year, month): (average corn basis ¢, plants)}} from the Basis Tracker's Corn Processing plants (ethanol_index.py);
+    {} off Snowflake or if it can't be read — the summary then simply has no benchmark column."""
+    try:
+        if not RD._use_snowflake():
+            return {}
+        since = (date.today() - timedelta(days=EI.LOOKBACK_DAYS)).isoformat()
+        return EI.state_index(RD._sf_rows(EI.SQL, (since,)))
+    except Exception:
+        return {}
+
+
 def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
     """The corridors the State Summary compares, for `months` = [(1-12, 'Nov'), ...]: [{label, bid(m) -> text, fob(state, m) -> ¢/bu
     | None, states}] and the footnotes. Each value is the corridor's STATE INDEX — the best (highest) FOB among that state's
@@ -3426,7 +3451,27 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
                          "USDA's level plus CN's fuel surcharge on estimated miles" + why + ".")
         else:
             notes.append("CN: left out — no CN 105s bids and no CIF NOLA corn curve reachable.")
+    # ---- the state ETHANOL INDEX — a benchmark to read the corridors against, not a corridor (never "best")
+    eth = _ethanol_index()
+    if eth:
+        today = date.today()
+
+        def eth_fob(state, m):
+            hit = EI.lookup(eth, state, m, today)
+            return None if hit is None else hit[0]
+
+        def eth_bid(m):
+            n = sum((EI.lookup(eth, st_, m, today) or (0, 0))[1] for st_ in eth)
+            return f"{n} plants" if n else "—"
+        corridors.append({"label": "Ethanol plant index (benchmark)", "benchmark": True, "bid": eth_bid, "fob": eth_fob, "states": set(eth)})
+        notes.append("Ethanol plant index: the average corn basis (¢ vs futures) of the Basis Tracker's Corn Processing plants in the state, "
+                     "from each plant's latest bid for the month — a benchmark, so it is never shaded as the best corridor.")
     return corridors, notes
+
+
+# The core shipping states the State Summary opens on (Kolten, 2026-11-02: "a sub set of states ... the core shipping states"); the rest are
+# behind the toggle. My pick of the main rail-loading states across the corridors — edit here.
+_CORE_STATES = ("IA", "IL", "IN", "MI", "MN", "ND", "NE", "OH", "SD")
 
 
 @st.fragment
@@ -3441,8 +3486,12 @@ def _summary_tab(sel_date):
     cn_src = st.radio("CN price", ["CN 105s bids", "CIF NOLA netback"], horizontal=True, key="sum_cn_src",
                       help="CN 105s bids: the CN 105s corn bid (FOB Champaign) carried to each origin by the freight difference. "
                            "CIF NOLA netback: the River FOB Portal's CIF NOLA corn price less each origin's full freight.")
+    all_states = st.toggle("Show all states", value=False, key="sum_all_states",
+                           help="Off: the core shipping states (" + ", ".join(_CORE_STATES) + "). On: every state any corridor has an origin in.")
     corridors, notes = _summary_corridors(sel_date, months, cn_src)
     states_all = sorted({s_ for c in corridors for s_ in c["states"]})
+    if not all_states:
+        states_all = [s_ for s_ in states_all if s_ in _CORE_STATES]
     for m, name in months:
         html = ['<table class="sheet"><tbody>',
                 f'<tr><th class="title" rowspan="2">FOB — {name}</th>'
@@ -3456,14 +3505,16 @@ def _summary_tab(sel_date):
             if all(v is None for v in vals):
                 continue
             rows_n += 1
-            top = max(v for v in vals if v is not None)
-            best_labels = [corridors[i]["label"] for i, v in enumerate(vals) if v is not None and v == top]
+            ranked = [v for v, c in zip(vals, corridors) if v is not None and not c.get("benchmark")]
+            top = max(ranked) if ranked else None
+            best_labels = [corridors[i]["label"] for i, v in enumerate(vals)
+                           if v is not None and top is not None and v == top and not corridors[i].get("benchmark")]
             tds = []
             for i, v in enumerate(vals):
                 txt, neg = _bn_fob_cell(v)
-                tds.append(f'<td class="fobv{neg}{" divide" if v is not None and v == top and sum(x is not None for x in vals) > 1 else ""}'
+                tds.append(f'<td class="fobv{neg}{" divide" if v is not None and v == top and len(ranked) > 1 and not corridors[i].get("benchmark") else ""}'
                            f'{" gl" if i == 0 else ""}">{txt}</td>')
-            html.append(f'<tr><td class="lbl">{state}</td>' + ''.join(tds) + f'<td class="fobv gl">{" / ".join(best_labels)}</td></tr>')
+            html.append(f'<tr><td class="lbl">{state}</td>' + ''.join(tds) + f'<td class="fobv gl">{" / ".join(best_labels) or "—"}</td></tr>')
         html.append('</tbody></table>')
         table_html = ''.join(html)
         if rows_n:
