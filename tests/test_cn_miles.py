@@ -4,6 +4,8 @@ import os
 import sys
 from datetime import date
 
+os.environ["USDA_CN_LIVE"] = "0"          # the unit tests read the committed USDA snapshot only
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import cn_miles as CM
@@ -52,4 +54,15 @@ assert FD.cn_tariff_uplift(10, today) == 495 and FD.cn_tariff_level(10, today)[1
 assert FD.cn_tariff_uplift(11, today) == 165 and FD.cn_tariff_level(11, today)[1] == "last year"     # Nov 2025: $2,681
 assert FD.cn_tariff_uplift(7, today) == 0 and FD.cn_tariff_uplift(9, today) == 275                    # Sep -> 2026-09 $2,791
 assert ser["2026-10"]["miles"] == CM.ANCHOR_MILES == 870
+# ---- a second origin checks the flat-step assumption: USDA's Ida Grove, IA -> Convent, LA (soybeans, 105+ cars) is the seed's Ida Grove rate
+# exactly in Jun-Aug 2026 and has the SAME step as Gibson City every month except Oct 2026 (GC +495, IG +275 on the seed)
+import json
+lanes = json.load(open(os.path.join(os.path.dirname(__file__), "..", "data", "usda_cn_tariff.json"), encoding="utf-8"))["other_lanes"]
+ig = next(iter(lanes.values()))
+ig_seed = next(r for r in FD.load_cn() if (r["origin"], r["state"], r["tier"]) == ("IDA GROVE", "IA", "105+ cars"))
+assert ig["2026-06"]["Railroad"] == ig_seed["rate_b"] == 3704 and ig["2026-06"]["Private"] == ig_seed["rate_d"] == 3269
+diff_months = [m for m in ig if m >= "2026-06" and (ig[m]["Railroad"] - ig_seed["rate_b"]) != (ser[m]["Railroad"] - FD.cn_seed_level())]
+assert diff_months == ["2026-10"], diff_months
+for m in ("2025-11", "2026-03", "2026-05"):                                      # Nov-May: both origins +165 on the seed
+    assert ig[m]["Railroad"] - ig_seed["rate_b"] == ser[m]["Railroad"] - FD.cn_seed_level() == 165, m
 print("test_cn_miles: all ok")

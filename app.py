@@ -2137,8 +2137,10 @@ def _cn_tab(sel_date):
     if months and not price_error:
         st.caption("CN tariff level vs the seed, \\$/car on every origin: " + " · ".join(tariff_bits)
                    + f". The seed (Supplement 41) is USDA's Gibson City rate for Jun-Aug 2026 (\\${seed_level:,} large railroad car); "
-                   "CN's tariff moves by month — Oct is a seasonal peak ($3,011), and Nov fell $330 last year. USDA lists only Gibson City, "
-                   "so the same change is assumed for every origin. It cancels against the Champaign bean bids.")
+                   "CN's tariff moves by month — Oct is a seasonal peak, and Nov fell $330 last year. USDA publishes two CN origins, Gibson City "
+                   "and Ida Grove, IA: the seed equals both of their Jun-Aug 2026 rates exactly and both took the same step in every month "
+                   "since except Oct 2026 (Gibson City +$495, Ida Grove +$275), so the same step is applied to every origin; USDA's later "
+                   "months replace last year's stand-ins as they are published. It cancels against the Champaign bean bids.")
     if fsc_on and months and not price_error:
         kinds = {"published": "CN-published", "formula": "formula on EIA diesel", "held": "last published, held flat"}
         parts = []

@@ -347,7 +347,8 @@ CN_LB_PER_BU = {"Corn": 56, "Soybeans": 60}
 # month's change is applied to every origin as a flat $/car (Kolten, 2026-10-28: "use USDA numbers").
 def cn_usda_series():
     """{'YYYY-MM': {'Railroad': $/car, 'Private': $/car, 'fsc_per_mile': $, 'miles': 870}} from USDA's CN Gibson City rows."""
-    return _load(os.path.join("data", "usda_cn_tariff.json"))["rows"]
+    import usda_cn
+    return usda_cn.series()
 
 
 def cn_seed_level():
