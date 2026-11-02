@@ -357,12 +357,32 @@ if _view_only():
     st.info("👁 **View-only version.** Everything here is read-only: the bids update as JSA posts them, and the freight inputs "
             "(BN shuttle quotes, fuel-surcharge months) are maintained by JSA.")
 
+# JSA's standard compliance disclaimer (the River FOB Portal's wording, verbatim), shown under every tab of the page — it is drawn after the
+# tab blocks, so it sits at the bottom whichever tab is open. The year rolls over by itself.
+def _render_disclaimer():
+    text = (
+        "Trading commodity futures, options on futures, cash commodities, and over-the-counter derivative products involves substantial "
+        "risk of loss and may not be suitable for all investors. This communication is provided for informational purposes only and does "
+        "not constitute investment advice, a recommendation, or an offer or solicitation to buy or sell any futures, options, cash "
+        "commodities, or derivative products. John Stewart &amp; Associates, Inc. does not accept orders to buy or sell any financial "
+        "instruments via email. The information contained herein has been obtained from sources believed to be reliable; however, its "
+        "accuracy and completeness are not guaranteed. Any opinions expressed are solely those of the author, are subject to change "
+        "without notice, and should not be relied upon as a basis for investment decisions. Past performance is not indicative of future "
+        "results. This message may contain confidential or proprietary information intended solely for the use of the designated "
+        f"recipient. &copy; John Stewart &amp; Associates, Inc. {date.today().year}")
+    st.markdown(
+        '<div style="font-family:inherit;margin-top:1.5rem;padding-top:0.7rem;border-top:1px solid #e0e0e0;font-size:inherit;'
+        f'line-height:1.4;color:#8a9199;text-align:justify;">{text}</div>',
+        unsafe_allow_html=True)
+
+
 if not RD.configured():
     st.warning(
         "BASIS_DATABASE_URL isn't set, so this portal can't reach the basis "
         "tracker's archive yet. Add it to `.env` locally or as a Streamlit "
         "secret to see live data."
     )
+    _render_disclaimer()
     # Which settings this app can see — names only, never values — so a missing or misnamed secret shows up at a glance.
     _seen = []
     for _k in ("USE_SNOWFLAKE", "SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_ROLE", "SNOWFLAKE_WAREHOUSE",
@@ -3592,3 +3612,5 @@ with ship_tab:
 # The railroad logos on tabs 3-6 are CSS-keyed to tab position (see the style block): a new tab shifts them.
 with carry_tab:
     _netcarry_tab()
+
+_render_disclaimer()
