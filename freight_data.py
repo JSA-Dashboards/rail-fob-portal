@@ -203,13 +203,19 @@ def load_bn(window):
     return rows
 
 
-def bn_cars_share(lane, cars):
-    """The share of the secondary-market BN car value a lane carries (Kolten, 2026-11-02): over 0 it is full price to PNW and half to
-    Hereford (quicker transit, value in the cars) for every origin; in the unders the opposite — half to PNW, full to Hereford."""
-    over = cars >= 0
+BN_BIG_UNDERS = 250      # $/car: an unders premium at least this negative is "big" (an assumption — Kolten gave the rule, not the line)
+
+
+def bn_car_cost(lane, cars):
+    """The secondary-market BN car value, in $/car, that a lane carries (Kolten, 2026-11-02). Over 0: full price to PNW, half to
+    Hereford (quicker transit, value in the cars), for every origin. In the unders the opposite — half to PNW and full to Hereford —
+    except that a SMALL unders is zero for Hereford (face value; the workbook's H16 note: "if in unders, use face value, if big unders
+    use prem"), and only a big one (BN_BIG_UNDERS or worse) carries the premium."""
+    if cars >= 0:
+        return cars if lane == "pnw" else cars / 2
     if lane == "pnw":
-        return 1.0 if over else 0.5
-    return 0.5 if over else 1.0
+        return cars / 2
+    return cars if cars <= -BN_BIG_UNDERS else 0.0
 
 
 def bn_build_row(r, window):
@@ -218,7 +224,7 @@ def bn_build_row(r, window):
     gets empty dicts, so its FOB shows "—". Shared by the freight sheet's 13 origins and bn_locator's lookup."""
     for lane, rate, miles in (("pnw", "pnw_rate", "pnw_miles"), ("hereford", "herf_rate", "herf_miles")):
         ok = r.get(rate) is not None and r.get(miles) is not None
-        r[lane] = ({w["key"]: r[rate] + r[miles] * w["fsc_per_mile"] + w["cars"] * bn_cars_share(lane, w["cars"]) for w in window}
+        r[lane] = ({w["key"]: r[rate] + r[miles] * w["fsc_per_mile"] + bn_car_cost(lane, w["cars"]) for w in window}
                    if ok else {})
         r[f"{lane}_cpb"] = {m: v / BN_BU_PER_CAR * 100 for m, v in r[lane].items()}
     return r
