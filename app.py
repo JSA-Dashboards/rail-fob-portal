@@ -1662,7 +1662,8 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
         w = month_win(p)
         cars = "—" if w is None else f"{w['cars']:,.0f}"
         fsc = "—" if w is None else f"{w['fsc_per_mile']:.2f}"
-        cells = [cars, fsc] if n == 2 else [f"{cars} / {fsc}"]
+        core = [d for d, _s in active if d != "COBO"]
+        cells = ([cars, fsc] if len(core) == 2 else [f"{cars} / {fsc}"] if len(core) == 1 else []) + (["—"] if len(core) < n else [])
         html.append(''.join(f'<td class="gl">{c}</td>' if i == 0 else f'<td>{c}</td>' for i, c in enumerate(cells)))
     html.append('</tr>')
     groups = [(r["origin"], [r]) for r in rows]
@@ -1686,7 +1687,8 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
                     if best_v is None or bid - frt > best_v:
                         best_v = bid - frt
                 vals.append(best_v)
-            bi = max(range(n), key=lambda i: vals[i]) if sum(v is not None for v in vals) == 2 else None
+            bi = (max((i for i in range(n) if vals[i] is not None), key=lambda i: vals[i])
+                  if sum(v is not None for v in vals) >= 2 else None)
             for i, v in enumerate(vals):
                 txt, neg = _bn_fob_cell(v)
                 grid.append(f'<td class="fobv{neg}{" divide" if i == bi else ""}{gl(i)}">{txt}</td>')
@@ -1698,7 +1700,7 @@ def _bn_fob_by_origin(rows, active, cells_by_dest, window, overrides, legend=Tru
     if not legend:
         return
     st.markdown(
-        '<div class="legend">¢/bu, bid − freight: negatives in parentheses; a dotted underline marks a bid typed in BN freight inputs. The yellow row is the bid / offer used (a Split '
+        '<div class="legend">BN COBO is the bid less the California tariff only (Hereford face + &#36;960 a car, per USDA AMS) — the COBO buyer takes the car cost and fuel surcharge. ¢/bu, bid − freight: negatives in parentheses; a dotted underline marks a bid typed in BN freight inputs. The yellow row is the bid / offer used (a Split '
         "month, FH+LH averaged or the OND / AMJJ package filled in where that period wasn't posted). BN Car Val is the "
         'secondary-market shuttle bid in &#36;/car (Hereford takes half) and FSC is &#36;/mile, both from the inputs '
         'below. Shaded = the better destination for that origin (the geographical PNW–Hereford divide).</div>',
@@ -1778,9 +1780,9 @@ def _bn_location_lookup(active, cells_by_dest, window, overrides):
 
 def _bn_tab(sel_date):
     st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab.")
-    fc, fe = st.columns(2)
+    dest_cols = st.columns(len(FD.BN_DESTINATIONS))
     show = {}
-    for (dest, spec), c in zip(FD.BN_DESTINATIONS.items(), (fc, fe)):
+    for (dest, spec), c in zip(FD.BN_DESTINATIONS.items(), dest_cols):
         show[dest] = c.checkbox(dest, value=True, key=f"bn_f_{spec['field']}")
     active = [(dest, spec) for dest, spec in FD.BN_DESTINATIONS.items() if show[dest]]
     if not active:

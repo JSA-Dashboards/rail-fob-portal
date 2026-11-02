@@ -24,3 +24,12 @@ small = FD.bn_build_row(row(), [{"key": "jan", "fsc_per_mile": 0.5, "cars": -100
 assert small["pnw"]["jan"] == 5000 + 500 - 50 and small["hereford"]["jan"] == 4000 + 400 - 100
 assert abs(under["pnw_cpb"]["jan"] - (5000 + 500 - 200) / 4000 * 100) < 1e-9
 print("test_bn_cars_share: all ok")
+
+# ---- BN COBO: tariff only (no car cost, no fuel surcharge), California = Hereford face + $960 (USDA AMS: Edison / Brunswick NE -> Hanford CA)
+assert FD.BN_COBO_OVER_HEREFORD == 960 and "COBO" in FD.BN_DESTINATIONS
+assert 4700 + FD.BN_COBO_OVER_HEREFORD == 5660 and 5360 + FD.BN_COBO_OVER_HEREFORD == 6320        # the two AMS lanes, Oct 2026
+for cars in (400, -400, 0):
+    cobo = FD.bn_build_row(row(), [{"key": "jan", "fsc_per_mile": 0.9, "cars": cars}, {"key": "feb", "fsc_per_mile": 0.5, "cars": 0}])
+    assert cobo["cobo_rate"] == 4000 + 960 and abs(cobo["cobo_cpb"]["jan"] - 4960 / 4000 * 100) < 1e-9 and cobo["cobo_cpb"]["jan"] == cobo["cobo_cpb"]["feb"]
+assert FD.bn_build_row({"pnw_rate": 5000, "pnw_miles": 1000, "herf_rate": None, "herf_miles": None}, [{"key": "jan", "fsc_per_mile": 0.5, "cars": 0}])["cobo_cpb"] == {}
+print("test_bn_cobo: all ok")

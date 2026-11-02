@@ -75,7 +75,13 @@ BN_BU_PER_CAR = 4000
 BN_DESTINATIONS = {
     "PNW":      {"field": "pnw", "market": "BN PNW"},
     "Hereford": {"field": "hereford", "market": "BN Hereford"},
+    "COBO":     {"field": "cobo", "market": "BN COBO"},
 }
+# BN COBO (Kolten, 2026-11-02): the COBO buyer leaves the car cost and fuel surcharge to itself, so FOB = the COBO bid less the TARIFF only,
+# and COBO has its own lane — California. USDA AMS's tariff series (AgTransport 3az4-jkr6, BNSF corn) has California at exactly $960/car over
+# Hereford for both Edison NE -> Hanford CA ($5,660 vs $4,700) and Brunswick NE -> Hanford CA ($6,320 vs $5,360), every month Mar-Oct 2026
+# (both lanes stepped +$200 in Oct together), so the COBO tariff is the origin's Hereford face rate + this.
+BN_COBO_OVER_HEREFORD = 960
 
 _BN_MONTH3 = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
               "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
@@ -220,6 +226,12 @@ def bn_build_row(r, window):
         r[lane] = ({w["key"]: r[rate] + r[miles] * w["fsc_per_mile"] + bn_car_cost(lane, w["cars"]) for w in window}
                    if ok else {})
         r[f"{lane}_cpb"] = {m: v / BN_BU_PER_CAR * 100 for m, v in r[lane].items()}
+    # COBO: tariff only (no car cost, no fuel surcharge), California = Hereford face + $960; the same every month
+    if r.get("herf_rate") is not None:
+        r["cobo_rate"] = r["herf_rate"] + BN_COBO_OVER_HEREFORD
+        r["cobo_cpb"] = {w["key"]: r["cobo_rate"] / BN_BU_PER_CAR * 100 for w in window}
+    else:
+        r["cobo_rate"], r["cobo_cpb"] = None, {}
     return r
 
 
