@@ -203,19 +203,12 @@ def load_bn(window):
     return rows
 
 
-BN_BIG_UNDERS = 250      # $/car: an unders premium at least this negative is "big" (an assumption — Kolten gave the rule, not the line)
-
-
 def bn_car_cost(lane, cars):
-    """The secondary-market BN car value, in $/car, that a lane carries (Kolten, 2026-11-02). Over 0: full price to PNW, half to
-    Hereford (quicker transit, value in the cars), for every origin. In the unders the opposite — half to PNW and full to Hereford —
-    except that a SMALL unders is zero for Hereford (face value; the workbook's H16 note: "if in unders, use face value, if big unders
-    use prem"), and only a big one (BN_BIG_UNDERS or worse) carries the premium."""
+    """The secondary-market BN car value, in $/car, that a lane carries (Kolten, 2026-11-02). Zero and over: full to PNW, half to Hereford
+    (quicker transit, value in the cars), for every origin. Under zero: the opposite — half to PNW, full to Hereford."""
     if cars >= 0:
         return cars if lane == "pnw" else cars / 2
-    if lane == "pnw":
-        return cars / 2
-    return cars if cars <= -BN_BIG_UNDERS else 0.0
+    return cars / 2 if lane == "pnw" else cars
 
 
 def bn_build_row(r, window):
