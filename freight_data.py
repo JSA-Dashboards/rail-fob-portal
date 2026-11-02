@@ -16,7 +16,7 @@ has no such marker (13 origins, no separate curated subset). BN's seed holds
 the freight INPUTS (face rate, miles, FSC $/mile and BN Cars $/car per
 period), not pasted totals — `load_bn()` rebuilds the totals.
 
-CSX rates are $/car at the workbook's stated 3500 bu/car. NS rates are
+CSX rates are $/car, converted at 3800 bu/car (Kolten, 2026-11-02; the workbook itself states 3500). NS rates are
 already $/bu. BN rates are $/car at 4000 bu/car (confirmed by cross-checking
 its own $/bu sub-table: $/car ÷ 4000 reproduces it exactly). All convert to
 ¢/bu for display, matching the bid side's units.
@@ -27,7 +27,7 @@ import re
 
 _DIR = os.path.dirname(__file__)
 
-CSX_BU_PER_CAR = 3500
+CSX_BU_PER_CAR = 3800      # Kolten, 2026-11-02: CSX and NS 3800 (the CSX workbook itself says 3500), BN 4000, CN its own car weights
 
 # CSX bid-market -> freight column(s) that net against it. Evansville has two
 # published variants (by downstream market); AL/TN/KY/LA is the primary one,
@@ -47,7 +47,7 @@ NS_REGIONS = {
     "East":      "east",
 }
 NS_BID_MARKET = "NS Ft Wayne"
-NS_BU_PER_CAR = 3500        # for the fuel surcharge's $/car -> ¢/bu (the same car the CSX workbook uses; NS's isn't stated)
+NS_BU_PER_CAR = 3800        # for the fuel surcharge's $/car -> ¢/bu (Kolten, 2026-11-02: CSX and NS 3800, UP and BN 4000, CN unchanged)
 
 
 def fsc_cpb(fsc_per_mile, miles, bu_per_car):

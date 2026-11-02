@@ -1005,7 +1005,7 @@ def _csx_tab(sel_date):
 
     st.markdown(
         '<div class="legend">¢/bu, FOB(origin) = bid − rail freight to that buying station '
-        '(¢/bu = &#36;/car ÷ 3500 bu/car × 100); negatives in parentheses. Freight is a static reference rate from the '
+        '(¢/bu = &#36;/car ÷ 3800 bu/car × 100); negatives in parentheses. Freight is a static reference rate from the '
         'CSX origin-spread workbook — only the bid side is live/archived. The yellow row is the bid / offer on each corridor; '
         "CSX's fuel surcharge is shown beneath it but not added. Highlighted = "
         'the origins starred in that workbook. Shaded = the better corridor for that row and period.</div>',
@@ -1254,7 +1254,7 @@ def _ns_tab(sel_date):
     st.markdown(
         '<div class="legend">FOB(origin) = bid at NS Ft Wayne − rail freight (¢/bu, '
         'already $/bu in the source workbook × 100) − NS fuel surcharge on the estimated extra rail miles vs Ft Wayne '
-        '(\\$/car-mile ÷ 3500 bu/car × 100; the miles are great-circle distance to a representative town in each region '
+        '(\\$/car-mile ÷ 3800 bu/car × 100; the miles are great-circle distance to a representative town in each region '
         '× 1.10, rough). GA / NC-SC-VA / East are three '
         'published through-rate variants against the same physical move, all pricing '
         'off the same bid — so Highlighted Origins shows the cheapest-freight '
@@ -3424,7 +3424,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
                          "USDA's level plus CN's fuel surcharge on estimated miles" + why + ".")
         else:
             notes.append("CN: left out — no CN 105s bids and no CIF NOLA corn curve reachable.")
-        return corridors, notes
+    return corridors, notes
 
 
 @st.fragment
