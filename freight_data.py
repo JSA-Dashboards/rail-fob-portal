@@ -203,13 +203,23 @@ def load_bn(window):
     return rows
 
 
+def bn_cars_share(lane, cars):
+    """The share of the secondary-market BN car value a lane carries (Kolten, 2026-11-02): over 0 it is full price to PNW and half to
+    Hereford (quicker transit, value in the cars) for every origin; in the unders the opposite — half to PNW, full to Hereford."""
+    over = cars >= 0
+    if lane == "pnw":
+        return 1.0 if over else 0.5
+    return 0.5 if over else 1.0
+
+
 def bn_build_row(r, window):
     """Adds pnw / hereford ($/car by month key) and pnw_cpb / hereford_cpb (¢/bu) to one origin dict that carries
     pnw_rate, pnw_miles, herf_rate, herf_miles. A lane whose rate or miles is None (no list rate, or miles not known yet)
     gets empty dicts, so its FOB shows "—". Shared by the freight sheet's 13 origins and bn_locator's lookup."""
-    for lane, rate, miles, share in (("pnw", "pnw_rate", "pnw_miles", 1), ("hereford", "herf_rate", "herf_miles", 0.5)):
+    for lane, rate, miles in (("pnw", "pnw_rate", "pnw_miles"), ("hereford", "herf_rate", "herf_miles")):
         ok = r.get(rate) is not None and r.get(miles) is not None
-        r[lane] = {w["key"]: r[rate] + r[miles] * w["fsc_per_mile"] + w["cars"] * share for w in window} if ok else {}
+        r[lane] = ({w["key"]: r[rate] + r[miles] * w["fsc_per_mile"] + w["cars"] * bn_cars_share(lane, w["cars"]) for w in window}
+                   if ok else {})
         r[f"{lane}_cpb"] = {m: v / BN_BU_PER_CAR * 100 for m, v in r[lane].items()}
     return r
 

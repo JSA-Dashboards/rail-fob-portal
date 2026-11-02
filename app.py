@@ -39,6 +39,7 @@ import rail_data as RD
 import rail_fsc as RF
 import rail_reference as REF
 import river_data as RVD
+import up_spreads as US
 import shipment_data as SD
 from rail_corridors import MANUAL_SECTIONS, RAIL_DISPLAY, RAIL_COLORS
 
@@ -851,7 +852,7 @@ def _csx_differs(r):
     return r["eville_altkyla"] != r["eville_gafl"]
 
 
-def _csx_fob_by_corridor(rows, active, periods, fsc_by_p, name):
+def _csx_fob_by_corridor(rows, active, periods, fsc_by_p, name, title="FOB CSX"):
     """FOB (¢/bu), Columbus | Evansville side by side under each bid period — the layout of the BN tab's FOB by Origin (Kolten,
     2026-10-28): the bid in a yellow row, the fuel surcharge noted beneath it (not included), negatives in parentheses red, and the
     better corridor for each row / period shaded. rows: [(label, calc)], calc(freight field, bid) -> ¢/bu;
@@ -874,13 +875,14 @@ def _csx_fob_by_corridor(rows, active, periods, fsc_by_p, name):
         return "—" if fsc_by_p.get(p) is None else format(fsc_by_p[p], ".2f")
 
     html = ['<table class="sheet"><tbody>',
-            '<tr><th class="title" rowspan="3">FOB CSX</th>'
+            f'<tr><th class="title" rowspan="3">{title}</th>'
             + ''.join(f'<th class="grp gl" colspan="{n}">{p}</th>' for p in periods) + '</tr>',
             '<tr>' + ''.join(f'<th class="sub{gl(i)}">{lbl}</th>' for _ in periods for i, (lbl, _c, _f) in enumerate(active)) + '</tr>',
             '<tr>' + ''.join(f'<td class="bidrow{gl(i)}">{bid_html(cells, p)}</td>'
-                             for p in periods for i, (_l, cells, _f) in enumerate(active)) + '</tr>',
-            '<tr class="carsrow"><td class="lbl">Fuel surcharge &#36;/mi (not included)</td>'
-            + ''.join(f'<td class="gl" colspan="{n}">{fsc_html(p)}</td>' for p in periods) + '</tr>']
+                             for p in periods for i, (_l, cells, _f) in enumerate(active)) + '</tr>']
+    if fsc_by_p is not None:
+        html.append('<tr class="carsrow"><td class="lbl">Fuel surcharge &#36;/mi (not included)</td>'
+                    + ''.join(f'<td class="gl" colspan="{n}">{fsc_html(p)}</td>' for p in periods) + '</tr>')
     for label, calc in rows:
         grid = []
         for p in periods:
@@ -1009,6 +1011,112 @@ def _csx_tab(sel_date):
         'the origins starred in that workbook. Shaded = the better corridor for that row and period.</div>',
         unsafe_allow_html=True,
     )
+
+
+_UP_NOTES = ("UP origins trade as a discount to a base — Group 3 (North Bend, NE) or Interior IA (Joice, IA) — so FOB(origin) = the base "
+             "bid less that origin's discount, the way the CSX / NS freight spreads work. Interior IA typically trades 8¢ under Group 3; an origin "
+             "with only one stated discount takes the other through that 8¢ († = derived). Other Iowa origins are par to Interior IA and other "
+             "Nebraska ones par to Group 3 (a small discount isn't stated, so it isn't modelled); MN and SD origins have no rule beyond the named ones.")
+
+
+def _up_origin_rows(spreads, label_fn):
+    """[(label, calc)] for UP origins in the BN-layout table: calc(base, bid) = the base bid less the origin's discount."""
+    out = []
+    for o in spreads:
+        out.append((label_fn(o) + (" †" if o["g3_derived"] or o["iia_derived"] else ""), lambda b, bid, o=o: US.fob(o, b, bid)))
+    return out
+
+
+def _up_state_rows():
+    """The UP state index rows: each state's best origin per base, the named origins plus the unnamed ones par to their state's base."""
+    named = US.origin_spreads()
+    rows = []
+    for state in ("NE", "IA", "MN"):
+        grp = [o for o in named if o["state"] == state]
+        g = US.generic_spreads(state)
+        if g:
+            grp.append(g)
+        rows.append((state, lambda b, bid, grp=grp: max([v for v in (US.fob(o, b, bid) for o in grp) if v is not None], default=None)))
+    return rows
+
+
+def _up_location_lookup(active, periods):
+    """One UP origin — the named ones, or any of the 147 on UP's shuttle program list, which take their state's par rule where there
+    is one (IA, NE) — in the same table as the key corridors (Kolten, 2026-11-02)."""
+    st.markdown("### FOB at Any UP Location")
+    named = {f"{o['state']} · {o['name'].split(',')[0]}": o for o in US.origin_spreads()}
+    options = dict(named)
+    for r in json.load(open(os.path.join(os.path.dirname(__file__), "data", "rail_directory", "up_shuttle.json"),
+                            encoding="utf-8"))["origins"]:
+        label = f"{r['state']} · {r['city'].title()}"
+        if label not in options:
+            options[label] = None
+    pick = st.selectbox("UP origin", sorted(options), index=None, key="up_loc_pick", label_visibility="collapsed",
+                        placeholder=f"Pick or type an origin — {len(options)} on UP's shuttle list and the named spreads ...")
+    if not pick:
+        st.caption("Pick an origin to see its FOB on Group 3 and on Interior IA.")
+        return
+    spread = options[pick] or US.generic_spreads(pick.split(" · ")[0])
+    if spread is None:
+        st.caption(f"No stated spread rule for {pick.split(' · ')[0]} origins — only the named MN / IA origins and the IA / NE "
+                   "par rule are modelled.")
+        return
+    if not periods:
+        st.caption("No UP Group 3 / Interior IA postings on or before this date yet.")
+        return
+    rows = _up_origin_rows([dict(spread, name=pick)], lambda o: o["name"])
+    _csx_fob_by_corridor(rows, active, periods, None, "up_fob_origin", title="FOB UP")
+    st.caption(f"{pick}: {spread['note']}; discount to Group 3 {spread['g3']}¢{' †' if spread['g3_derived'] else ''}, to Interior IA "
+               f"{spread['iia']}¢{' †' if spread['iia_derived'] else ''}.")
+
+
+def _up_tab(sel_date):
+    st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab.")
+    g3, g3_eff = _bid_cells_for("manual", US.BASES["Group 3"], sel_date)
+    iia, iia_eff = _bid_cells_for("manual", US.BASES["Interior IA"], sel_date)
+    mex = _bid_cells_for("manual", US.ALLEN_MARKETS["Mexico"], sel_date)[0]
+    dom = _bid_cells_for("manual", US.ALLEN_MARKETS["Domestic"], sel_date)[0]
+    periods = _period_union(g3, iia)
+    active = [("Group 3", g3, "Group 3"), ("Interior IA", iia, "Interior IA")]
+
+    st.markdown("### Rail FOB — UP")
+    _raw_corridor_table(list(US.BASES.values()) + list(US.ALLEN_MARKETS.values()), sel_date)
+    st.caption(_UP_NOTES)
+
+    st.markdown("### FOB by State — Group 3 vs Interior IA")
+    if periods:
+        _csx_fob_by_corridor(_up_state_rows(), active, periods, None, "up_state_index", title="FOB UP")
+        st.caption("Best (highest) FOB among the state's named origins and the unnamed ones par to the base, per base and bid period — an "
+                   "index, not any single origin's number. Shaded = the better base for that state / period.")
+    else:
+        st.caption("No UP Group 3 / Interior IA postings on or before this date yet.")
+
+    st.markdown("### Key Corridors — Named Origins")
+    if periods:
+        rows = _up_origin_rows(US.origin_spreads(), lambda o: f"{o['state']} · {o['name'].split(',')[0]}")
+        _csx_fob_by_corridor(rows, active, periods, None, "up_named_origins", title="FOB UP")
+        st.caption("; ".join(f"{o['name']} — {o['note']}" for o in US.origin_spreads()) + ". † = the second discount is derived through the 8¢ spread.")
+    else:
+        st.caption("No UP Group 3 / Interior IA postings on or before this date yet.")
+
+    st.markdown("### Allen Station, IL — Mexico vs Domestic")
+    allen_periods = _period_union(mex, dom)
+    if allen_periods:
+        _csx_fob_by_corridor([("IL · Allen Station", lambda f, bid: bid)], [("Mexico", mex, "m"), ("Domestic", dom, "d")], allen_periods,
+                             None, "up_allen", title="FOB UP")
+        bits = []
+        for p in allen_periods:
+            iv = (iia.get(p) or {}).get("bid")
+            for lbl, cells in (("Mexico", mex), ("Domestic", dom)):
+                av = (cells.get(p) or {}).get("bid")
+                if iv is not None and av is not None:
+                    bits.append(f"{p} {lbl} {av - iv:+.0f}")
+        st.caption("Allen's own bids are already FOB at Allen. Against Interior IA: " + (" · ".join(bits[:8]) if bits else "—")
+                   + f" (typically +{US.ALLEN_OVER_IIA['Mexico']}¢ to Mexico, about +{US.ALLEN_OVER_IIA['Domestic']}¢ domestic).")
+    else:
+        st.caption("No Allen Station postings on or before this date yet.")
+
+    _up_location_lookup(active, periods)
 
 
 def _ns_freight_fn(field, fsc_on, fsc_by_p):
@@ -3226,6 +3334,32 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
     notes.append("BN: every BNSF location in the state (the sheet's 13 plus the price list's, with estimated miles), freight and fuel "
                  "surcharge for that month.")
 
+    # ---- UP: each state's best origin on Group 3 / Interior IA (the named origins, and the unnamed ones par to the base); IL from
+    # Allen Station's own bids (Mexico or domestic, the better)
+    g3_cells = _bid_cells_for("manual", US.BASES["Group 3"], sel_date)[0]
+    iia_cells = _bid_cells_for("manual", US.BASES["Interior IA"], sel_date)[0]
+    allen_cells = [_bid_cells_for("manual", mk, sel_date)[0] for mk in US.ALLEN_MARKETS.values()]
+    up_q = {m: (_month_quote(g3_cells, m), _month_quote(iia_cells, m), [_month_quote(c, m) for c in allen_cells]) for m, _l in months}
+    up_rows = dict(_up_state_rows())
+
+    def up_fob(state, m):
+        g, i, al = up_q[m]
+        if state == "IL":
+            vals = [q[0] for q in al if q]
+        else:
+            vals = [v for v in (up_rows[state]("Group 3", g[0]) if g else None, up_rows[state]("Interior IA", i[0]) if i else None)
+                    if v is not None]
+        return max(vals) if vals else None
+
+    def up_bid(m):
+        g, i, _al = up_q[m]
+        if not g and not i:
+            return "—"
+        return " / ".join(f"{n} {q[0]:+.0f}" + ("*" if q[2] != "month" else "") for n, q in (("G3", g), ("IIA", i)) if q)
+    corridors.append({"label": "UP Group 3 / Interior IA", "bid": up_bid, "fob": up_fob, "states": {"NE", "IA", "MN", "IL"}})
+    notes.append("UP: each state's best origin on Group 3 or Interior IA (named origins at their stated discounts, the rest par to the base), "
+                 "IL from Allen Station's own bids.")
+
     # ---- CN: 105+ car shuttle origins, large railroad cars, the USDA tariff level plus the fuel surcharge on estimated miles —
     # either the CN 105s corn bids (FOB Champaign: bid + freight(Champaign) - freight(origin), like the CN tab's bean bids) or a
     # corn netback from the CIF NOLA curve
@@ -3290,8 +3424,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
                          "USDA's level plus CN's fuel surcharge on estimated miles" + why + ".")
         else:
             notes.append("CN: left out — no CN 105s bids and no CIF NOLA corn curve reachable.")
-    notes.append("UP isn't here: its corridor bids are on the Bids tab and there is no state freight table for it.")
-    return corridors, notes
+        return corridors, notes
 
 
 @st.fragment
@@ -3370,7 +3503,7 @@ with cn_tab:
     REF.render("CN", _diesel_weekly)
 
 with up_tab:
-    st.caption("UP's corridor bids are on the Bids tab; this tab holds UP's grain shuttle program and fuel surcharge for reference.")
+    _up_tab(_manual_date)
     REF.render("UP", _diesel_weekly)
 
 with map_tab:
