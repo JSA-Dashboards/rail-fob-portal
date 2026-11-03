@@ -137,7 +137,7 @@ NS_LOGO_URI = _asset_uri("ns_logo.svg")
 BNSF_LOGO_URI = _asset_uri("bnsf_logo.svg")
 CN_LOGO_URI = _asset_uri("cn_logo.svg")
 UP_LOGO_URI = _asset_uri("up_logo.svg")       # "" until assets/up_logo.svg exists (then the UP tab, #7, shows it)
-UP_LOGO_RULE = (f'[role="tab"]:nth-of-type(7) p::before {{ content: ""; display: inline-block; width: 26px; height: 16px; '
+UP_LOGO_RULE = (f'[role="tab"]:nth-of-type(8) p::before {{ content: ""; display: inline-block; width: 26px; height: 16px; '
                 f"background: url('{UP_LOGO_URI}') no-repeat center / contain; }}" if UP_LOGO_URI else "")
 
 JPSI_DARK = "#32373c"
@@ -315,22 +315,22 @@ st.markdown(
       /* Railroad logos on their tabs, in place of a generic emoji. Streamlit's
          st.tabs() only takes plain text, so this positions each carrier's mark
          via nth-of-type — must stay in sync with the literal tab order below
-         (Bids, State Summary, CSX, NS, BN, CN, UP, Map, References, Shipments, Net Carry). Logos sit on
-         tabs 3-6, so inserting a tab before position 6 means shifting these four numbers with it. */
+         (Bids, State Summary, State Level, CSX, NS, BN, CN, UP, Map, Shipments, References, Net Carry). Logos sit on
+         tabs 4-8, so inserting a tab before position 6 means shifting these four numbers with it. */
       [role="tab"] p {{ display: flex; align-items: center; gap: 6px; }}
-      [role="tab"]:nth-of-type(3) p::before {{
+      [role="tab"]:nth-of-type(4) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{CSX_LOGO_URI}') no-repeat center / contain;
       }}
-      [role="tab"]:nth-of-type(4) p::before {{
+      [role="tab"]:nth-of-type(5) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{NS_LOGO_URI}') no-repeat center / contain;
       }}
-      [role="tab"]:nth-of-type(5) p::before {{
+      [role="tab"]:nth-of-type(6) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{BNSF_LOGO_URI}') no-repeat center / contain;
       }}
-      [role="tab"]:nth-of-type(6) p::before {{
+      [role="tab"]:nth-of-type(7) p::before {{
         content: ""; display: inline-block; width: 26px; height: 16px;
         background: url('{CN_LOGO_URI}') no-repeat center / contain;
       }}
@@ -3507,6 +3507,104 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
     return corridors, notes
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _state_locations(state):
+    """{(facility_type, provider, location): {(year, month): basis ¢}} for the Basis Tracker's ethanol plants / corn processors and river
+    terminals in one state (ethanol_index.location_series); {} off Snowflake or if it can't be read."""
+    try:
+        if not RD._use_snowflake():
+            return {}
+        since = (date.today() - timedelta(days=EI.LOOKBACK_DAYS)).isoformat()
+        return EI.location_series(RD._sf_rows(EI.LOC_SQL, (state, since)))
+    except Exception:
+        return {}
+
+
+# State Level rail rows, in the order and grouping of Kolten's "FOB Central IL Corn" sheet: (group, summary column label prefix, gateway)
+_SL_RAIL_ROWS = (("East Rail", "CN", "Champaign"), ("East Rail", "CSX COL", "Columbus"), ("East Rail", "CSX Eville", "Evansville"),
+                 ("East Rail", "NS", "Ft Wayne"), ("West Rail", "UP", "Group 3 / Interior IA"), ("West Rail", "BN PNW", "PNW"),
+                 ("West Rail", "BN Hereford", "Hereford"))
+
+
+@st.fragment
+def _state_level_tab(sel_date):
+    st.caption(f"Posting date **{sel_date}** — change it on the 📋 Bids tab. One state's FOB (¢/bu) across the rail corridors, its ethanol plants "
+               "and river terminals, for the next eight delivery months — the layout of the JSA FOB sheet.")
+    today = date.today()
+    months = [(((today.month - 1 + k) % 12) + 1, calendar.month_abbr[((today.month - 1 + k) % 12) + 1]) for k in range(8)]
+    corridors, notes = _summary_corridors(sel_date, months, "CN 105s bids")
+    by_label = {c["label"]: c for c in corridors}
+    states = sorted({s_ for c in corridors for s_ in c["states"]})
+    state = st.selectbox("State", states, index=states.index("IL") if "IL" in states else 0, key="sl_state")
+    locs = _state_locations(state)
+
+    def lbl(key):
+        return f"{key[1]} · {key[2]}"
+    plants = sorted((k for k in locs if k[0] == "Corn Processing"), key=lambda k: (-len(locs[k]), lbl(k)))
+    rivers = sorted((k for k in locs if k[0] == "River Terminal"), key=lambda k: (-len(locs[k]), lbl(k)))
+    c1, c2 = st.columns(2)
+    sel_plants = c1.multiselect("Ethanol plants", plants, default=plants[:5], format_func=lbl, key=f"sl_plants_{state}")
+    sel_rivers = c2.multiselect("River terminals", rivers, default=rivers[:5], format_func=lbl, key=f"sl_rivers_{state}")
+
+    def year_of(m):
+        return today.year if m >= today.month else today.year + 1
+
+    # rows: (group, origin, gateway / type, [value per month], rail?)
+    rows = []
+    for key in sel_rivers:
+        rows.append(("River", lbl(key), "At the terminal", [locs[key].get((year_of(m), m)) for m, _n in months], False))
+    eth = by_label.get("Ethanol Index")
+    if eth and state in eth["states"]:
+        rows.append(("Processor", "Ethanol Index (state average)", "Del", [eth["fob"](state, m) for m, _n in months], False))
+    for key in sel_plants:
+        rows.append(("Processor", lbl(key), "Del", [locs[key].get((year_of(m), m)) for m, _n in months], False))
+    for group, prefix, gateway in _SL_RAIL_ROWS:
+        c = next((c for lb, c in by_label.items() if lb == prefix or lb.startswith(prefix + " ")), None)
+        if c and state in c["states"]:
+            rows.append((group, c["label"], gateway, [c["fob"](state, m) for m, _n in months], True))
+    if not any(any(v is not None for v in r[3]) for r in rows):
+        st.info(f"No bids found for {state} yet.")
+        return
+
+    # shade the rail rows only (the sheet's rankings leave the river out): best two green, worst two red, per month
+    shade = {}
+    for j in range(len(months)):
+        ranked = sorted(((r[3][j], i) for i, r in enumerate(rows) if r[4] and r[3][j] is not None), reverse=True)
+        if len(ranked) >= 4:
+            for _v, i in ranked[:2]:
+                shade[(i, j)] = "#dcfce7"
+            for _v, i in ranked[-2:]:
+                shade[(i, j)] = "#fee2e2"
+    sub_labels = ["Spot"] + [f"{k} Mon" for k in range(1, len(months))]
+    html = ['<table class="sheet"><tbody>',
+            f'<tr><th class="title" rowspan="2" colspan="3">FOB {state} Corn</th>' + ''.join(f'<th class="grp gl">{n}</th>' for _m, n in months) + '</tr>',
+            '<tr>' + ''.join(f'<th class="sub gl">{t}</th>' for t in sub_labels) + '</tr>']
+    last_group, spans = None, {}
+    for r in rows:
+        spans[r[0]] = spans.get(r[0], 0) + 1
+    for i, (group, origin, gate, vals, _rail) in enumerate(rows):
+        cells = []
+        if group != last_group:
+            cells.append(f'<td class="lbl" rowspan="{spans[group]}" style="font-style:italic;color:#64748b">{group}</td>')
+            last_group = group
+        cells.append(f'<td class="lbl">{origin}</td><td class="lbl" style="color:#64748b">{gate}</td>')
+        for j, v in enumerate(vals):
+            txt, neg = _bn_fob_cell(v)
+            bg = f' style="background:{shade[(i, j)]}"' if (i, j) in shade else ""
+            cells.append(f'<td class="fobv{neg}{" gl" if j == 0 else ""}"{bg}>{txt}</td>')
+        html.append('<tr>' + ''.join(cells) + '</tr>')
+    html.append('</tbody></table>')
+    table_html = ''.join(html)
+    st.markdown(_card_open() + table_html + _card_close(), unsafe_allow_html=True)
+    _table_actions(table_html, f"state_level_{state.lower()}.png")
+    st.markdown('<div class="legend">¢/bu as posted, negatives in parentheses. Rail rows are the state\'s best origin on that corridor after freight '
+                '(the State Summary\'s numbers); river terminal and ethanol plant rows are the Basis Tracker\'s latest corn bids for the month at that '
+                'location (a plant bid is delivered; a river bid is at the terminal — truck freight and margin to bring them to an origin FOB, like the '
+                '37¢ + 4¢ on the sheet, are not applied). Ethanol Index is the average of every Corn Processing plant in the state. Green / red = the best / '
+                'worst two rail rows for the month. ' + " ".join(n for n in notes if n.startswith(("CSX", "NS", "BN", "UP", "CN"))) + '</div>',
+                unsafe_allow_html=True)
+
+
 # The core shipping states the State Summary opens on (Kolten, 2026-11-02: "a sub set of states ... the core shipping states"); the rest are
 # behind the toggle. My pick of the main rail-loading states across the corridors — edit here.
 _CORE_STATES = ("IA", "IL", "IN", "MI", "MN", "ND", "NE", "OH", "SD")
@@ -3519,10 +3617,7 @@ def _summary_tab(sel_date):
     today = date.today()
     # The front month is the current month, always (Kolten, 2026-11-02: "November as the front month and then the 4 months to follow",
     # then "default with showing the current month").
-    include_current = st.checkbox("Start with the current month", value=True, key="sum_cur",
-                                  help="On (the default): this month is the front month, then the next four. Off: the five months "
-                                       "after this one.")
-    first = today.month if include_current else today.month % 12 + 1
+    first = today.month          # always the current month first (Kolten, 2026-11-03: "always show the nearest month ... not even an option")
     months = [(((first - 1 + k) % 12) + 1, calendar.month_abbr[((first - 1 + k) % 12) + 1]) for k in range(5)]
     cn_src = st.radio("CN price", ["CN 105s bids", "CIF NOLA netback"], horizontal=True, key="sum_cn_src",
                       help="CN 105s bids: the CN 105s corn bid (FOB Champaign) carried to each origin by the freight difference. "
@@ -3569,8 +3664,8 @@ def _summary_tab(sel_date):
                 'corridor, or no origin in the state. ' + " ".join(notes) + '</div>', unsafe_allow_html=True)
 
 
-bids_tab, summary_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, ship_tab, refs_tab, carry_tab = st.tabs(
-    ["📋 Bids", "📊 State Summary", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "📦 Shipments", "🔗 References", "💵 Net Carry"])
+bids_tab, summary_tab, state_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_tab, ship_tab, refs_tab, carry_tab = st.tabs(
+    ["📋 Bids", "📊 State Summary", "📍 State Level", "CSX", "NS", "BN", "CN", "UP", "🗺️ Map", "📦 Shipments", "🔗 References", "💵 Net Carry"])
 _diesel_weekly = _bn_auto_fsc()[1]
 
 with bids_tab:
@@ -3579,6 +3674,9 @@ with bids_tab:
 
 with summary_tab:
     _summary_tab(_manual_date)
+
+with state_tab:
+    _state_level_tab(_manual_date)
 
 with csx_tab:
     _csx_tab(_manual_date)
