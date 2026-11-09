@@ -34,6 +34,7 @@ import bn_inputs as BNI
 import bn_locator as BL
 import cn_miles as CM
 import ethanol_index as EI
+import state_level as SL
 import ns_miles as NSM
 import freight_data as FD
 import rail_data as RD
@@ -3520,16 +3521,16 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _state_locations(state):
-    """{(facility_type, provider, location): {(year, month): basis ¢}} for the Basis Tracker's ethanol plants / corn processors and river
-    terminals in one state (ethanol_index.location_series); {} off Snowflake or if it can't be read."""
+def _state_location_rows(state):
+    """The Basis Tracker's latest corn bids at its ethanol plants / corn processors and river terminals in one state (ethanol_index.LOC_SQL
+    rows, with each location's delivery zone); [] off Snowflake or if it can't be read."""
     try:
         if not RD._use_snowflake():
-            return {}
+            return []
         since = (date.today() - timedelta(days=EI.LOOKBACK_DAYS)).isoformat()
-        return EI.location_series(RD._sf_rows(EI.LOC_SQL, (state, since)))
+        return list(RD._sf_rows(EI.LOC_SQL, (state, since)))
     except Exception:
-        return {}
+        return []
 
 
 # State Level rail rows, in the order and grouping of Kolten's "FOB Central IL Corn" sheet: (group, summary column label prefix, gateway)
@@ -3548,26 +3549,39 @@ def _state_level_tab(sel_date):
     by_label = {c["label"]: c for c in corridors}
     states = sorted({s_ for c in corridors for s_ in c["states"]})
     state = st.selectbox("State", states, index=states.index("IL") if "IL" in states else 0, key="sl_state")
-    locs = _state_locations(state)
+    loc_rows = _state_location_rows(state)
+    locs = EI.location_series(loc_rows)
 
     def lbl(key):
         return f"{key[1]} · {key[2]}"
-    plants = sorted((k for k in locs if k[0] == "Corn Processing"), key=lambda k: (-len(locs[k]), lbl(k)))
-    rivers = sorted((k for k in locs if k[0] == "River Terminal"), key=lambda k: (-len(locs[k]), lbl(k)))
-    c1, c2 = st.columns(2)
-    sel_plants = c1.multiselect("Ethanol plants", plants, default=plants[:5], format_func=lbl, key=f"sl_plants_{state}")
-    sel_rivers = c2.multiselect("River terminals", rivers, default=rivers[:5], format_func=lbl, key=f"sl_rivers_{state}")
+    # Illinois is cleaned up (Kolten, 2026-11-09): river = the Zone 2 / 3 / 5 and STL INDEXES, processor = the state Ethanol Index only — no pickers.
+    # The other states keep the pickers until they get the same treatment.
+    il = state == "IL"
+    sel_plants, sel_rivers, river_idx = [], [], {}
+    if il:
+        river_idx = SL.river_index(loc_rows)
+    else:
+        plants = sorted((k for k in locs if k[0] == "Corn Processing"), key=lambda k: (-len(locs[k]), lbl(k)))
+        rivers = sorted((k for k in locs if k[0] == "River Terminal"), key=lambda k: (-len(locs[k]), lbl(k)))
+        c1, c2 = st.columns(2)
+        sel_plants = c1.multiselect("Ethanol plants", plants, default=plants[:5], format_func=lbl, key=f"sl_plants_{state}")
+        sel_rivers = c2.multiselect("River terminals", rivers, default=rivers[:5], format_func=lbl, key=f"sl_rivers_{state}")
 
     def year_of(m):
         return today.year if m >= today.month else today.year + 1
 
     # rows: (group, origin, gateway / type, [value per month], rail?)
     rows = []
+    for g in SL.IL_RIVER_ORDER if il else ():
+        series = river_idx.get(g, {})
+        n = max((v[1] for v in series.values()), default=0)
+        rows.append(("River", f"{g} index" if g != "STL" else "STL index", f"Avg of {n} terminals" if n else "—",
+                     [(series.get((year_of(m), m)) or (None,))[0] for m, _n in months], False))
     for key in sel_rivers:
         rows.append(("River", lbl(key), "At the terminal", [locs[key].get((year_of(m), m)) for m, _n in months], False))
     eth = by_label.get("Ethanol Index")
     if eth and state in eth["states"]:
-        rows.append(("Processor", "Ethanol Index (state average)", "Del", [eth["fob"](state, m) for m, _n in months], False))
+        rows.append(("Processor", "Ethanol Index", "State avg", [eth["fob"](state, m) for m, _n in months], False))
     for key in sel_plants:
         rows.append(("Processor", lbl(key), "Del", [locs[key].get((year_of(m), m)) for m, _n in months], False))
     for group, prefix, gateway in _SL_RAIL_ROWS:
@@ -3612,7 +3626,7 @@ def _state_level_tab(sel_date):
     st.markdown('<div class="legend">¢/bu as posted, negatives in parentheses. Rail rows are the state\'s best origin on that corridor after freight '
                 '(the State Summary\'s numbers); river terminal and ethanol plant rows are the Basis Tracker\'s latest corn bids for the month at that '
                 'location (a plant bid is delivered; a river bid is at the terminal — truck freight and margin to bring them to an origin FOB, like the '
-                '37¢ + 4¢ on the sheet, are not applied). Ethanol Index is the average of every Corn Processing plant in the state. Green / red = the best / '
+                '37¢ + 4¢ on the sheet, are not applied). Ethanol Index is the average of every Corn Processing plant in the state. Illinois river rows are indexes: the average of the Basis Tracker terminals tagged Zone 2, Zone 3 and Zone 5, and STL (the St. Louis-area terminals, taken out of Zone 5). Green / red = the best / '
                 'worst two rail rows for the month. ' + " ".join(n for n in notes if n.startswith(("CSX", "NS", "BN", "UP", "CN"))) + '</div>',
                 unsafe_allow_html=True)
 
