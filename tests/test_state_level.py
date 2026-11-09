@@ -25,4 +25,14 @@ assert idx["Zone 5"][(2026, 11)] == (35.0, 2) and idx["Zone 5"][(2026, 12)] == (
 assert idx["STL"][(2026, 11)] == ((-20 + -20) / 2, 2)                                            # Cahokia (-10, -30 -> -20) and Sauget -20
 assert SL.group_of("Bunge", "Fairmont City", "Zone 5") == "STL" and SL.group_of("CHS", "Peru Marketstreet", "Zone 3") == "Zone 3"
 assert SL.group_of("ADM", "Havana, IL", None) is None and SL.group_of("X", "Y", "Zone 1") is None
+# ---- Indiana: Evansville (ADM x4) and Louisville (CGB Louisville KY + CGB Jeffersonville IN, typed as elevators)
+inrows = [R("ADM", "Evansville, IN (1st Ave.)", None, "Nov 2026", 10), R("ADM", "Evansville, IN (Broadway)", None, "Nov 2026", 20),
+          R("ADM", "Mt. Vernon, IN (Elevator)", None, "Nov 2026", 30),                               # Mt. Vernon is in the Evansville average
+          R("ADM", "Rockport, IN", None, "Nov 2026", 99),                                              # a river terminal, but not shown for Indiana
+          R("CGB", "CGB LOUISVILLE", None, "Nov 2026", -10, ft="Country Elevator"), R("CGB", "CGB JEFFERSONVILLE", None, "Nov 2026", -30, ft="Country Elevator"),
+          R("CGB", "Some Other Elevator", None, "Nov 2026", 55, ft="Country Elevator")]
+iidx = SL.river_index(inrows, "IN")
+assert set(iidx) == {"Evansville", "Louisville"} and SL.RIVER_ORDER["IN"] == ("Evansville", "Louisville")
+assert iidx["Evansville"][(2026, 11)] == (20.0, 3) and iidx["Louisville"][(2026, 11)] == (-20.0, 2)
+assert SL.group_of_in("Rockport, IN") is None and SL.group_of_in("CGB LOUISVILLE") == "Louisville"
 print("test_state_level: all ok")
