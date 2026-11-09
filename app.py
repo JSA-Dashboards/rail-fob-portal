@@ -1306,6 +1306,14 @@ _BN_TARGET_BY_LOWER = {m.lower(): m for m in _BN_TARGET_MONTHS}
 _BN_FILL_PACKAGES = {"AM": ("AMJJ",), "JJ": ("AMJJ",)}
 
 
+def _offer_only_month(cells, month_name):
+    """True when the month's OWN postings (the plain month, Split / FH / LH / MP of it) include an offer but no bid at all — a one-sided
+    offer posting. Kolten, 2026-11-09: leave those BLANK; don't fill the month from a package or from the other side."""
+    labels = (month_name, f"split {month_name}", f"fh {month_name}", f"lh {month_name}", f"mp {month_name}")
+    own = [c for p, c in cells.items() if p.strip().lower() in {x.lower() for x in labels}]
+    return any(c.get("offer") is not None for c in own) and not any(c.get("bid") is not None for c in own)
+
+
 def _bn_pair(cells, *labels):
     """(bid, offer) of the first matching period (exact label, case-insensitive) that has a bid —
     None if none does."""
@@ -1346,6 +1354,8 @@ def _bn_infer_quote(cells, month):
         return ((fh[0] + lh[0]) / 2, _bn_mean(fh[1], lh[1]))
     if fh or lh:
         return fh or lh
+    if _offer_only_month(cells, month):
+        return None
     for pkg in _BN_FILL_PACKAGES.get(month, ()):
         q = _bn_pair(cells, pkg)
         if q:
@@ -3299,6 +3309,8 @@ def _month_quote(cells, month):
         return ((fh[0] + lh[0]) / 2, _bn_mean(fh[1], lh[1]), "inferred")
     if fh or lh:
         return (*(fh or lh), "inferred")
+    if _offer_only_month(cells, name):
+        return None
     covering = []
     for p, c in cells.items():
         months = FD.period_months(p)
