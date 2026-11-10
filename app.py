@@ -3345,7 +3345,7 @@ def _pick(vals, mode="best"):
     return sum(vals) / len(vals) if mode == "avg" else max(vals)
 
 
-def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
+def _summary_corridors(sel_date, months, cn_src="CN 105s bids", state_level=False):
     """The corridors the State Summary compares, for `months` = [(1-12, 'Nov'), ...]: [{label, bid(m) -> text, fob(state, m) -> ¢/bu
     | None, states}] and the footnotes. Each value is the corridor's STATE INDEX — the best (highest) FOB among that state's
     origins — built from the same freight, fuel surcharge and bids as the railroad's own tab, with each corridor's bid resolved to
@@ -3401,7 +3401,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
     overrides = BNI.bid_overrides(inputs["payload"])
     cells_by_dest = {dest: _bid_cells_for("manual", spec["market"], sel_date)[0] for dest, spec in FD.BN_DESTINATIONS.items()}
     for dest, spec in FD.BN_DESTINATIONS.items():
-        if dest == "COBO":            # COBO stays on the BN tab; the summary compares PNW and Hereford (Kolten, 2026-11-02)
+        if dest == "COBO" and not state_level:     # COBO stays off the State Summary (Kolten, 2026-11-02); the State Level shows it for IA / NE
             continue
 
         def bn_quote(m, dest=dest):
@@ -3458,6 +3458,21 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids"):
             return "—"
         return " / ".join(f"{n} {q[0]:+.0f}" + ("*" if q[2] != "month" else "") for n, q in (("G3", g), ("IIA", i)) if q)
     corridors.append({"label": "UP", "bid": up_bid, "fob": up_fob, "bidnum": up_bidnum, "states": {"NE", "IA", "MN", "IL"}})
+    if state_level:                                          # the State Level lists the two UP bases separately (IA / NE: "UP Interior, UP Group 3")
+        def up_origin_list(state):
+            origins = [o for o in US.origin_spreads() if o["state"] == state]
+            generic = US.generic_spreads(state)
+            return origins + ([generic] if generic else [])
+
+        for up_label, base in (("UP Interior IA", "Interior IA"), ("UP Group 3", "Group 3")):
+            def base_bid(m, base=base):
+                return (up_q[m][0] if base == "Group 3" else up_q[m][1])
+
+            def up_base_fob(state, m, mode="best", base=base):
+                q = base_bid(m, base)
+                return None if not q else _pick([US.fob(o, base, q[0]) for o in up_origin_list(state)], mode)
+            corridors.append({"label": up_label, "bid": lambda m, base=base: bid_text(base_bid(m, base)), "fob": up_base_fob,
+                              "bidnum": lambda state, m, base=base: (base_bid(m, base) or (None,))[0], "states": {"NE", "IA", "MN", "KS"}})
     notes.append("UP: each state's best origin on Group 3 or Interior IA (named origins at their stated discounts, the rest par to the base), "
                  "IL from Allen Station's own bids.")
 
@@ -3551,18 +3566,32 @@ def _state_location_rows(state):
         if not RD._use_snowflake():
             return []
         since = (date.today() - timedelta(days=EI.LOOKBACK_DAYS)).isoformat()
-        rows = list(RD._sf_rows(EI.LOC_SQL, (state, since)))
-        if state == "IN":                      # Indiana's Louisville values are CGB's Louisville / Jeffersonville bids (KY and an elevator type)
-            rows += list(RD._sf_rows(SL.EXTRA_SQL, (*SL.IN_EXTRA_LOCATIONS, since)))
-        return rows
+        if SL.named_members(state):            # IN / IA / OH: the river rows are named groups (state_level.NAMED_GROUPS)
+            sql, params = SL.named_sql(state)
+            return list(RD._sf_rows(sql, (*params, since)))
+        if state in SL.REGION:                 # KS: a region value plus the plants, from one every-type pull
+            return list(RD._sf_rows(SL.ALL_SQL, (state, since)))
+        return list(RD._sf_rows(EI.LOC_SQL, (state, since)))        # IL, NE (plants for the sub-indexes) and the states still on pickers
     except Exception:
         return []
 
 
 # State Level rail rows, in the order and grouping of Kolten's "FOB Central IL Corn" sheet: (group, summary column label prefix, gateway)
-_SL_RAIL_ROWS = (("East Rail", "CN", "Champaign"), ("East Rail", "CSX COL", "Columbus"), ("East Rail", "CSX Eville", "Evansville"),
+_SL_RAIL_ROWS = (("East Rail", "CN 105s", "Champaign"), ("East Rail", "CSX COL", "Columbus"), ("East Rail", "CSX Eville", "Evansville"),
                  ("East Rail", "NS", "Ft Wayne"), ("West Rail", "UP", "Group 3 / Interior IA"), ("West Rail", "BN PNW", "PNW"),
                  ("West Rail", "BN Hereford", "Hereford"))
+# The cleaned-up states' rail rows (Kolten, 2026-11-09 / 10), by corridor label from _summary_corridors(state_level=True)
+_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS = ("East Rail", "CN 105s", "Champaign"), ("East Rail", "CSX COL", "Columbus"), ("East Rail", "CSX Eville", "Evansville"), ("East Rail", "NS", "Ft Wayne")
+_SL_UP_IIA, _SL_UP_G3 = ("West Rail", "UP Interior IA", "Interior IA (Joice)"), ("West Rail", "UP Group 3", "Group 3 (North Bend)")
+_SL_PNW, _SL_HEREFORD, _SL_COBO = ("West Rail", "BN PNW", "PNW"), ("West Rail", "BN Hereford", "Hereford"), ("West Rail", "BN COBO", "California (COBO)")
+_SL_RAIL_BY_STATE = {
+    "IL": (_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS, ("West Rail", "UP", "Allen Station (Mexico)"), _SL_HEREFORD),     # Allen Mexico; PNW dropped
+    "IN": (_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS),
+    "IA": (_SL_CN, _SL_NS, _SL_UP_IIA, _SL_UP_G3, _SL_PNW, _SL_HEREFORD, _SL_COBO),     # his list: UP Interior, UP Group 3, CN, NS, BN PNW, BN Hereford, BN COBO
+    "OH": (_SL_EVILLE, _SL_COL, _SL_NS),
+    "NE": (_SL_UP_G3, _SL_UP_IIA, _SL_HEREFORD, _SL_PNW),               # Kolten 11-10: "UP Group 3 & Interior IA, BN Hereford and PNW" (COBO dropped)
+    "KS": (_SL_UP_G3, _SL_UP_IIA, _SL_HEREFORD, _SL_PNW),
+}
 
 
 @st.fragment
@@ -3571,7 +3600,7 @@ def _state_level_tab(sel_date):
                "and river terminals, for the next eight delivery months — the layout of the JSA FOB sheet.")
     today = date.today()
     months = [(((today.month - 1 + k) % 12) + 1, calendar.month_abbr[((today.month - 1 + k) % 12) + 1]) for k in range(8)]
-    corridors, notes = _summary_corridors(sel_date, months, "CN 105s bids")
+    corridors, notes = _summary_corridors(sel_date, months, "CN 105s bids", state_level=True)
     by_label = {c["label"]: c for c in corridors}
     states = sorted({s_ for c in corridors for s_ in c["states"]})
     state = st.selectbox("State", states, index=states.index("IL") if "IL" in states else 0, key="sl_state")
@@ -3582,8 +3611,7 @@ def _state_level_tab(sel_date):
         return f"{key[1]} · {key[2]}"
     # Illinois is cleaned up (Kolten, 2026-11-09): river = the Zone 2 / 3 / 5 and STL INDEXES, processor = the state Ethanol Index only — no pickers.
     # The other states keep the pickers until they get the same treatment.
-    il = state == "IL"
-    cleaned = state in SL.RIVER_ORDER                  # IL and IN: river rows are indexes, processor is the state Ethanol Index only
+    cleaned = state in SL.RIVER_ORDER                  # IL, IN, IA, OH, NE: river rows are indexes (NE has none), processor is the state Ethanol Index only
     sel_plants, sel_rivers, river_idx = [], [], {}
     if cleaned:
         river_idx = SL.river_index(loc_rows, state)
@@ -3606,19 +3634,25 @@ def _state_level_tab(sel_date):
                      [(series.get((year_of(m), m)) or (None,))[0] for m, _n in months], False))
     for key in sel_rivers:
         rows.append(("River", lbl(key), "At the terminal", "", [locs[key].get((year_of(m), m)) for m, _n in months], False))
+    reg = SL.region_index(loc_rows, state)           # Kansas: the Garden City region value (every non-ethanol location within 60 miles)
+    if reg and reg[1]:
+        series = reg[1]
+        n = max(v[1] for v in series.values())
+        rows.append(("Region", reg[0], f"Avg of {n} location{'s' if n != 1 else ''}", "", [(series.get((year_of(m), m)) or (None,))[0] for m, _n in months], False))
     eth = by_label.get("Ethanol Index")
     if eth and state in eth["states"]:
         rows.append(("Processor", "Ethanol Index", "State avg", "", [eth["fob"](state, m) for m, _n in months], False))
+    for lab, series in SL.ethanol_subindex(loc_rows, state).items():      # NE: Eastern / Central; KS: Northeast / Southwest
+        n = max(v[1] for v in series.values())
+        rows.append(("Processor", lab, f"Avg of {n} plant{'s' if n != 1 else ''}", "", [(series.get((year_of(m), m)) or (None,))[0] for m, _n in months], False))
     for key in sel_plants:
         rows.append(("Processor", lbl(key), "Del", "", [locs[key].get((year_of(m), m)) for m, _n in months], False))
-    for group, prefix, gateway in _SL_RAIL_ROWS:
-        c = next((c for lb, c in by_label.items() if lb == prefix or lb.startswith(prefix + " ")), None)
-        if il and c and c["label"] == "BN PNW":              # Illinois: PNW never makes sense (Kolten, 2026-11-09)
-            continue
-        if il and c and c["label"] == "UP":                  # Illinois UP is Allen Station, Mexico values
-            gateway = "Allen Station (Mexico)"
+    for group, label, gateway in _SL_RAIL_BY_STATE.get(state, _SL_RAIL_ROWS):
+        c = by_label.get(label) or (next((c for lb, c in by_label.items() if lb.startswith("CN")), None) if label.startswith("CN") else None)
         if c and state in c["states"]:
             vals = [c["fob"](state, m, "avg") for m, _n in months]            # the state's AVERAGE freight spread from this corridor, not its best origin
+            if all(v is None for v in vals):                                  # a corridor with no origin / bid for this state (KS has no BN PNW origins) shows no row
+                continue
             j0 = next((j for j, v in enumerate(vals) if v is not None), None)
             bid0 = c["bidnum"](state, months[j0][0]) if j0 is not None else None
             spread = "" if bid0 is None else f"{_rnd(vals[j0] - bid0):+d}"
@@ -3631,11 +3665,11 @@ def _state_level_tab(sel_date):
     shade = {}
     for j in range(len(months)):
         ranked = sorted(((r[4][j], i) for i, r in enumerate(rows) if r[5] and r[4][j] is not None), reverse=True)
-        if len(ranked) >= 4:
-            for _v, i in ranked[:2]:
-                shade[(i, j)] = "#dcfce7"
-            for _v, i in ranked[-2:]:
-                shade[(i, j)] = "#fee2e2"
+        k = 2 if len(ranked) >= 4 else 1 if len(ranked) == 3 else 0     # the best / worst two rail rows (one each when there are three)
+        for _v, i in ranked[:k]:
+            shade[(i, j)] = "#dcfce7"
+        for _v, i in (ranked[-k:] if k else ()):
+            shade[(i, j)] = "#fee2e2"
     sub_labels = ["Spot"] + [f"{k} Mon" for k in range(1, len(months))]
     html = ['<table class="sheet"><tbody>',
             f'<tr><th class="title" rowspan="2" colspan="4">FOB {state} Corn</th>' + ''.join(f'<th class="grp gl">{n}</th>' for _m, n in months) + '</tr>',
@@ -3663,7 +3697,7 @@ def _state_level_tab(sel_date):
                 '(the average across the corridor\'s origins in the state, not the best origin the State Summary uses); the Spread column is that average '
                 'freight spread at the front month (negative = freight against the bid, relative to Champaign for CN); river terminal and ethanol plant rows are the Basis Tracker\'s latest corn bids for the month at that '
                 'location (a plant bid is delivered; a river bid is at the terminal — truck freight and margin to bring them to an origin FOB, like the '
-                '37¢ + 4¢ on the sheet, are not applied). Ethanol Index is the average of every Corn Processing plant in the state. Illinois river rows are indexes: the average of the Basis Tracker terminals tagged Zone 2, Zone 3 and Zone 5, and STL (the St. Louis-area terminals, taken out of Zone 5); Indiana river rows are indexes: Evansville (the ADM Evansville terminals) and Louisville (CGB Louisville and Jeffersonville). Green / red = the best / '
+                '37¢ + 4¢ on the sheet, are not applied). Ethanol Index is the average of every Corn Processing plant in the state. Illinois river rows are indexes: the average of the Basis Tracker terminals tagged Zone 2, Zone 3 and Zone 5, and STL (the St. Louis-area terminals, taken out of Zone 5); Indiana river rows are indexes: Evansville (the ADM Evansville terminals and Mt. Vernon) and Louisville (CGB Louisville and Jeffersonville); Iowa river row is Dubuque (ADM East Dubuque); Ohio river rows are Toledo and Cincinnati. BN COBO is the bid less the California tariff only (Hereford face + &#36;960 a car, no car cost or fuel surcharge). Green / red = the best / '
                 'worst two rail rows for the month. ' + " ".join(n for n in notes if n.startswith(("CSX", "NS", "BN", "UP", "CN"))) + '</div>',
                 unsafe_allow_html=True)
 

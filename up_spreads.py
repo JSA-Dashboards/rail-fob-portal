@@ -32,7 +32,8 @@ ORIGINS = [
     ("Sloan, IA", "IA", 3, None, "3c off Group 3"),
 ]
 # every other origin in these states: par to its state's base (a small discount isn't stated)
-GENERIC = {"IA": ("Interior IA", 0), "NE": ("Group 3", 0)}
+GENERIC = {"IA": ("Interior IA", 0), "NE": ("Group 3", 0),
+           "KS": ("Group 3", 0)}      # KS: par to Group 3 is an ASSUMPTION (Kolten asked for UP rows on the Kansas State Level; no Kansas spread was stated)
 
 
 def spreads(g3, iia):
