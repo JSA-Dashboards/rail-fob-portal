@@ -3431,50 +3431,32 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids", state_level=Fals
     allen_cells = [_bid_cells_for("manual", mk, sel_date)[0] for mk in US.ALLEN_MARKETS.values()]
     up_q = {m: (_month_quote(g3_cells, m), _month_quote(iia_cells, m), [_month_quote(c, m) for c in allen_cells]) for m, _l in months}
 
-    def up_fob(state, m, mode="best"):
-        g, i, al = up_q[m]
-        if state == "IL":                                  # Allen Station's own Mexico bids (Kolten, 2026-11-09: "just Allen Station, show Mexico")
-            return al[0][0] if al and al[0] else None
+    def up_origin_list(state):
         origins = [o for o in US.origin_spreads() if o["state"] == state]
         generic = US.generic_spreads(state)
-        if generic:
-            origins.append(generic)
-        vals = []
-        for o in origins:                                  # each origin trades its better base
-            per = [v for v in (US.fob(o, "Group 3", g[0]) if g else None, US.fob(o, "Interior IA", i[0]) if i else None) if v is not None]
-            if per:
-                vals.append(max(per))
-        return _pick(vals, mode)
+        return origins + ([generic] if generic else [])
 
-    def up_bidnum(state, m):
-        g, i, al = up_q[m]
-        if state == "IL":
-            return al[0][0] if al and al[0] else None
-        return (g or i or (None,))[0]
+    def base_bid(m, base):
+        return up_q[m][0] if base == "Group 3" else up_q[m][1]
 
-    def up_bid(m):
-        g, i, _al = up_q[m]
-        if not g and not i:
-            return "—"
-        return " / ".join(f"{n} {q[0]:+.0f}" + ("*" if q[2] != "month" else "") for n, q in (("G3", g), ("IIA", i)) if q)
-    corridors.append({"label": "UP", "bid": up_bid, "fob": up_fob, "bidnum": up_bidnum, "states": {"NE", "IA", "MN", "IL"}})
-    if state_level:                                          # the State Level lists the two UP bases separately (IA / NE: "UP Interior, UP Group 3")
-        def up_origin_list(state):
-            origins = [o for o in US.origin_spreads() if o["state"] == state]
-            generic = US.generic_spreads(state)
-            return origins + ([generic] if generic else [])
+    # Group 3 and Interior IA are separate columns / rows (Kolten, 2026-11-10: "show Group 3 and Iowa Interior both separate"); each origin's FOB
+    # is that base's bid less its discount. Kansas (par to Group 3, an assumption) appears on the State Level only.
+    up_states = {"NE", "IA", "MN"} | ({"KS"} if state_level else set())
+    for up_label, base in ((("UP Group 3", "Group 3"), ("UP Interior IA", "Interior IA")) if state_level else (("UP G3", "Group 3"), ("UP IIA", "Interior IA"))):
+        def up_base_fob(state, m, mode="best", base=base):
+            q = base_bid(m, base)
+            return None if not q else _pick([US.fob(o, base, q[0]) for o in up_origin_list(state)], mode)
+        corridors.append({"label": up_label, "bid": lambda m, base=base: bid_text(base_bid(m, base)),
+                          "fob": up_base_fob, "bidnum": lambda state, m, base=base: (base_bid(m, base) or (None,))[0], "states": up_states})
 
-        for up_label, base in (("UP Interior IA", "Interior IA"), ("UP Group 3", "Group 3")):
-            def base_bid(m, base=base):
-                return (up_q[m][0] if base == "Group 3" else up_q[m][1])
-
-            def up_base_fob(state, m, mode="best", base=base):
-                q = base_bid(m, base)
-                return None if not q else _pick([US.fob(o, base, q[0]) for o in up_origin_list(state)], mode)
-            corridors.append({"label": up_label, "bid": lambda m, base=base: bid_text(base_bid(m, base)), "fob": up_base_fob,
-                              "bidnum": lambda state, m, base=base: (base_bid(m, base) or (None,))[0], "states": {"NE", "IA", "MN", "KS"}})
-    notes.append("UP: each state's best origin on Group 3 or Interior IA (named origins at their stated discounts, the rest par to the base), "
-                 "IL from Allen Station's own bids.")
+    # Illinois: Allen Station's own Mexico bids (Kolten, 2026-11-09: "just Allen Station, show Mexico")
+    def allen_fob(state, m, mode="best"):
+        al = up_q[m][2]
+        return al[0][0] if al and al[0] else None
+    corridors.append({"label": "UP Allen", "bid": lambda m: bid_text(up_q[m][2][0] if up_q[m][2] else None),
+                      "fob": allen_fob, "bidnum": lambda state, m: allen_fob(state, m), "states": {"IL"}})
+    notes.append("UP: Group 3 and Interior IA shown separately (named origins at their stated discounts, the rest par to the base), "
+                 "IL from Allen Station's own Mexico bids.")
 
     # ---- CN: 105+ car shuttle origins, large railroad cars, the USDA tariff level plus the fuel surcharge on estimated miles —
     # either the CN 105s corn bids (FOB Champaign: bid + freight(Champaign) - freight(origin), like the CN tab's bean bids) or a
@@ -3578,14 +3560,14 @@ def _state_location_rows(state):
 
 # State Level rail rows, in the order and grouping of Kolten's "FOB Central IL Corn" sheet: (group, summary column label prefix, gateway)
 _SL_RAIL_ROWS = (("East Rail", "CN 105s", "Champaign"), ("East Rail", "CSX COL", "Columbus"), ("East Rail", "CSX Eville", "Evansville"),
-                 ("East Rail", "NS", "Ft Wayne"), ("West Rail", "UP", "Group 3 / Interior IA"), ("West Rail", "BN PNW", "PNW"),
+                 ("East Rail", "NS", "Ft Wayne"), ("West Rail", "UP Group 3", "Group 3 (North Bend)"), ("West Rail", "UP Interior IA", "Interior IA (Joice)"), ("West Rail", "BN PNW", "PNW"),
                  ("West Rail", "BN Hereford", "Hereford"))
 # The cleaned-up states' rail rows (Kolten, 2026-11-09 / 10), by corridor label from _summary_corridors(state_level=True)
 _SL_CN, _SL_COL, _SL_EVILLE, _SL_NS = ("East Rail", "CN 105s", "Champaign"), ("East Rail", "CSX COL", "Columbus"), ("East Rail", "CSX Eville", "Evansville"), ("East Rail", "NS", "Ft Wayne")
 _SL_UP_IIA, _SL_UP_G3 = ("West Rail", "UP Interior IA", "Interior IA (Joice)"), ("West Rail", "UP Group 3", "Group 3 (North Bend)")
 _SL_PNW, _SL_HEREFORD, _SL_COBO = ("West Rail", "BN PNW", "PNW"), ("West Rail", "BN Hereford", "Hereford"), ("West Rail", "BN COBO", "California (COBO)")
 _SL_RAIL_BY_STATE = {
-    "IL": (_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS, ("West Rail", "UP", "Allen Station (Mexico)"), _SL_HEREFORD),     # Allen Mexico; PNW dropped
+    "IL": (_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS, ("West Rail", "UP Allen", "Allen Station (Mexico)"), _SL_HEREFORD),     # Allen Mexico; PNW dropped
     "IN": (_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS),
     "IA": (_SL_CN, _SL_NS, _SL_UP_IIA, _SL_UP_G3, _SL_PNW, _SL_HEREFORD, _SL_COBO),     # his list: UP Interior, UP Group 3, CN, NS, BN PNW, BN Hereford, BN COBO
     "OH": (_SL_EVILLE, _SL_COL, _SL_NS),
