@@ -8,7 +8,9 @@ Tracker ...; use the state ethanol index bids, not individuals"). Each cleaned-u
   IN  Evansville (ADM's four Evansville terminals and ADM Mt. Vernon) and Louisville (CGB Louisville, KY and CGB Jeffersonville, IN — the tracker types both as
       country elevators and has no Louisville river terminal).
   IA  Dubuque (ADM East Dubuque, ADM Grain — the only Dubuque location the tracker carries; it sits on the Illinois bank).
+  MN  Winona (ADM Winona, CHS Winona) and Twin Cities (ADM St. Paul, and the CGB / CHS / Cargill Savage terminals).
   OH  Toledo (ADM Toledo export terminal, the two Andersons Toledo elevators) and Cincinnati (Cargill's Kellogg and River Road).
+  IA  also Eastern / Western Iowa ethanol sub-indexes (split at 93.6 W, the Des Moines meridian).
   KS  Garden City region (every non-ethanol Kansas location the tracker has within 60 miles of Garden City) plus Northeast / Southwest Kansas ethanol indexes.
   NE  no river rows; Eastern / Central Nebraska ethanol indexes.
 
@@ -29,6 +31,8 @@ NAMED_GROUPS = {
                            ("ADM", "Evansville, IN (River South)"), ("ADM", "Mt. Vernon, IN (Elevator)"))),
            ("Louisville", (("CGB", "CGB LOUISVILLE"), ("CGB", "CGB JEFFERSONVILLE")))),
     "IA": (("Dubuque", (("ADM", "East Dubuque, ADM Grain"),)),),
+    "MN": (("Winona", (("ADM", "Winona, MN"), ("CHS", "Winona"))),
+           ("Twin Cities", (("ADM", "St. Paul, MN (Elevator D)"), ("CGB", "CGB SAVAGE"), ("CHS", "Savage"), ("Cargill", "Savage")))),
     "OH": (("Toledo", (("ADM", "Toledo, OH"), ("Andersons", "Toledo - Edwin Dr"), ("Andersons", "Toledo - Kuhlman Dr"))),
            ("Cincinnati", (("Cargill", "Cincinnati Kellogg"), ("Cargill", "Cincinnati River Road")))),
 }
@@ -39,6 +43,7 @@ RIVER_ORDER = {"IL": IL_RIVER_ORDER, **{st: tuple(g for g, _m in groups) for st,
 # stays in the state Ethanol Index only. The tracker holds only four Kansas plants, so those indexes are one or two plants each.
 ETHANOL_SUBINDEX = {
     "NE": (("Eastern NE index", lambda lat, lon: lon >= -97.7), ("Central NE index", lambda lat, lon: -100.5 <= lon < -97.7)),
+    "IA": (("Eastern IA index", lambda lat, lon: lon >= -93.6), ("Western IA index", lambda lat, lon: lon < -93.6)),   # split at the Des Moines meridian
     "KS": (("Northeast KS index", lambda lat, lon: lon >= -98.9), ("Southwest KS index", lambda lat, lon: lon < -98.9)),
 }
 # ---- a REGION value: every non-ethanol location of the state within `miles` of a centre

@@ -42,6 +42,11 @@ ohrows = [R("ADM", "Toledo, OH", None, "Nov 2026", 10, ft="Export Terminal"), R(
           R("Mennel", "Mennel Milling Toledo", None, "Nov 2026", 77, ft="Wheat Milling")]
 oidx = SL.river_index(ohrows, "OH")
 assert oidx["Toledo"][(2026, 11)] == (20.0, 3) and oidx["Cincinnati"][(2026, 11)] == (-5.0, 1) and SL.RIVER_ORDER["OH"] == ("Toledo", "Cincinnati")
+mnrows = [R("ADM", "Winona, MN", None, "Nov 2026", -10, ft="River Terminal"), R("CHS", "Winona", None, "Nov 2026", -20, ft="River Terminal"),
+          R("CGB", "CGB SAVAGE", None, "Nov 2026", 0, ft="River Terminal"), R("Cargill", "Savage", None, "Nov 2026", 10, ft="River Terminal"),
+          R("Scoular", "Scoular Winona", None, "Nov 2026", 99, ft="Rail Terminal")]
+midx = SL.river_index(mnrows, "MN")
+assert midx["Winona"][(2026, 11)] == (-15.0, 2) and midx["Twin Cities"][(2026, 11)] == (5.0, 2) and SL.RIVER_ORDER["MN"] == ("Winona", "Twin Cities")
 assert SL.RIVER_ORDER["NE"] == () and SL.river_index([], "NE") == {} and SL.named_members("NE") == []
 sql, params = SL.named_sql("OH")
 assert sql.count("%s") == len(params) + 1 and params[0] == "ADM|Toledo, OH" and "LEFT JOIN" in sql      # the params, then `since`
@@ -62,6 +67,10 @@ ksrows = [P("Western Plains", "Oakley", 39.13, -100.86, "Dec 2026", -5), P("Kans
           P("Cardinal", "Colwich", 37.78, -97.54, "Dec 2026", 50)]
 ksub = SL.ethanol_subindex(ksrows, "KS")
 assert ksub["Southwest KS index"][(2026, 12)] == (-5.0, 1) and ksub["Northeast KS index"][(2026, 12)] == (45.0, 2)
+iarows2 = [P("POET", "Gowrie", 42.28, -94.29, "Nov 2026", -12), P("POET", "Ashton", 43.31, -95.79, "Nov 2026", -16),      # Western (lon < -93.6)
+           P("Valero", "Charles City", 43.10, -92.74, "Nov 2026", -27), P("ADM", "Clinton", 41.82, -90.22, "Nov 2026", -3)]   # Eastern
+isub = SL.ethanol_subindex(iarows2, "IA")
+assert isub["Western IA index"][(2026, 11)] == (-14.0, 2) and isub["Eastern IA index"][(2026, 11)] == (-15.0, 2) and list(isub) == ["Eastern IA index", "Western IA index"]
 assert SL.ethanol_subindex(ksrows, "IL") == {}
 regrows = [P("Garden City Coop", "Garden City, KS", 37.94, -101.26, "Nov 2026", 10, ft="Country Elevator"),         # inside 60 miles
            P("Garden City Coop", "Lakin, KS", 37.94, -101.26, "Nov 2026", 20, ft="Country Elevator"),

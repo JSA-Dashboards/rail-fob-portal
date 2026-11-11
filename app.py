@@ -3548,9 +3548,12 @@ def _state_location_rows(state):
         if not RD._use_snowflake():
             return []
         since = (date.today() - timedelta(days=EI.LOOKBACK_DAYS)).isoformat()
-        if SL.named_members(state):            # IN / IA / OH: the river rows are named groups (state_level.NAMED_GROUPS)
+        if SL.named_members(state):            # IN / IA / MN / OH: the river rows are named groups (state_level.NAMED_GROUPS)
             sql, params = SL.named_sql(state)
-            return list(RD._sf_rows(sql, (*params, since)))
+            rows = list(RD._sf_rows(sql, (*params, since)))
+            if state in SL.ETHANOL_SUBINDEX:   # IA: the plants too, for the Eastern / Western sub-indexes
+                rows += [r for r in RD._sf_rows(EI.LOC_SQL, (state, since)) if r.get("facility_type") == "Corn Processing"]
+            return rows
         if state in SL.REGION:                 # KS: a region value plus the plants, from one every-type pull
             return list(RD._sf_rows(SL.ALL_SQL, (state, since)))
         return list(RD._sf_rows(EI.LOC_SQL, (state, since)))        # IL, NE (plants for the sub-indexes) and the states still on pickers
@@ -3571,6 +3574,7 @@ _SL_RAIL_BY_STATE = {
     "IN": (_SL_CN, _SL_COL, _SL_EVILLE, _SL_NS),
     "IA": (_SL_CN, _SL_NS, _SL_UP_IIA, _SL_UP_G3, _SL_PNW, _SL_HEREFORD, _SL_COBO),     # his list: UP Interior, UP Group 3, CN, NS, BN PNW, BN Hereford, BN COBO
     "OH": (_SL_EVILLE, _SL_COL, _SL_NS),
+    "MN": (_SL_PNW, _SL_HEREFORD, _SL_UP_G3, _SL_UP_IIA),               # Kolten 11-10: "BN PNW, BN Hereford, UP Group 3, UP Interior IA"
     "NE": (_SL_UP_G3, _SL_UP_IIA, _SL_HEREFORD, _SL_PNW),               # Kolten 11-10: "UP Group 3 & Interior IA, BN Hereford and PNW" (COBO dropped)
     "KS": (_SL_UP_G3, _SL_UP_IIA, _SL_HEREFORD, _SL_PNW),
 }
