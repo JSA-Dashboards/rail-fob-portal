@@ -313,3 +313,7 @@ A `return` that slid into an `else:` crashed the State Summary only when CN 105s
 ## State Level: South Dakota (2026-11-11, Kolten: "BN Hereford & PNW, UP Group 3 & Interior IA, Eastern Ethanol and western ethanol")
 - Rows: the state Ethanol Index, **Eastern SD index** (lon >= -97.5: Watertown, Chancellor, Wentworth, Marion, Rosholt, Big Stone City, Hudson = 7 plants) and **Western SD index** (lon < -97.5: Scotland, Mitchell, Groton, Aberdeen, Mina, Onida = 6), then BN Hereford, BN PNW, UP Group 3, UP Interior IA. No river rows.
 - **ASSUMPTION**: no SD UP origin discount was stated, so `up_spreads.GENERIC['SD'] = Interior IA, par` (Group 3 comes through the 8c paper spread, i.e. 8c under). SD UP rows are State Level only (not on the State Summary), like Kansas. Replace when Kolten gives the real SD spreads.
+
+## State Level: North Dakota (2026-11-11, Kolten: "do the same with ND")
+- Same layout as SD: state Ethanol Index, **Eastern ND index** (lon >= -97.5, the Red River Valley: Hankinson, Wahpeton) and **Western ND index** (Dakota Spirit / Spiritwood, Blue Flint / Underwood; the tracker holds only four ND plants, and Dakota Spirit posts Jan / Feb only), then BN Hereford, BN PNW, UP Group 3, UP Interior IA. No river rows.
+- **ASSUMPTION**: `up_spreads.GENERIC['ND']` = par to Interior IA, like SD (no ND spread stated); ND UP rows are State Level only.
