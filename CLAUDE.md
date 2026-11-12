@@ -323,3 +323,6 @@ A `return` that slid into an `else:` crashed the State Summary only when CN 105s
 
 ## CN tab: the posted bids at the top (2026-11-12, Kolten: "list the bid offers FOB Champaign / Thomasboro like we do elsewhere")
 - The CN tab now opens with a **Rail FOB — CN 105s** grid (`_raw_corridor_table(['CN 105s', 'CN 105s Beans'], ..., labels=...)`, the same grid the CSX / NS / BN / UP tabs open with), rows labelled "CN 105s Corn · FOB Champaign / Thomasboro" and "CN 105s Beans · FOB Champaign / Thomasboro". The label override is local to the CN tab (`labels` argument), the Bids tab keeps its names. Live 11-12: corn Nov +12, Dec +15, Jan +3, JFM +6, AMJJ +5; beans Nov +17 ... The corn FOB tables below still net against CIF NOLA (only soybeans have a CN 105s bid option on this tab).
+
+## Bids tab: plain heading and a Beans section (2026-11-12, Kolten)
+- The Bids tab heading is now just **Rail Corridors** (was "Manual Rail Corridors (chat-fed)"). `rail_corridors.MANUAL_SECTIONS` gains a **Beans** section holding **CN 105s Beans** (live 11-12: Nov +17, Dec +20, Jan +20, Feb +10, tagged ZSX27 / ZSF27 / ZSH27). Palmetto's live `COL, OH Beans 90's` line is a separate source (`palmetto`) the portal's Bids tab doesn't read; add it if wanted.

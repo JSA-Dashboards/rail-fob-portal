@@ -3761,7 +3761,7 @@ bids_tab, summary_tab, state_tab, csx_tab, ns_tab, bn_tab, cn_tab, up_tab, map_t
 _diesel_weekly = _bn_auto_fsc()[1]
 
 with bids_tab:
-    st.markdown("### Manual Rail Corridors (chat-fed)")
+    st.markdown("### Rail Corridors")
     _manual_date = _sheet_board("manual", MANUAL_SECTIONS, "man", other_keep=set())
 
 with summary_tab:
