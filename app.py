@@ -3441,7 +3441,7 @@ def _summary_corridors(sel_date, months, cn_src="CN 105s bids", state_level=Fals
 
     # Group 3 and Interior IA are separate columns / rows (Kolten, 2026-11-10: "show Group 3 and Iowa Interior both separate"); each origin's FOB
     # is that base's bid less its discount. Kansas (par to Group 3, an assumption) appears on the State Level only.
-    up_states = {"NE", "IA", "MN"} | ({"KS"} if state_level else set())
+    up_states = {"NE", "IA", "MN"} | ({"KS", "SD"} if state_level else set())
     for up_label, base in ((("UP Group 3", "Group 3"), ("UP Interior IA", "Interior IA")) if state_level else (("UP G3", "Group 3"), ("UP IIA", "Interior IA"))):
         def up_base_fob(state, m, mode="best", base=base):
             q = base_bid(m, base)
@@ -3575,6 +3575,7 @@ _SL_RAIL_BY_STATE = {
     "IA": (_SL_CN, _SL_NS, _SL_UP_IIA, _SL_UP_G3, _SL_PNW, _SL_HEREFORD, _SL_COBO),     # his list: UP Interior, UP Group 3, CN, NS, BN PNW, BN Hereford, BN COBO
     "OH": (_SL_EVILLE, _SL_COL, _SL_NS),
     "MN": (_SL_PNW, _SL_HEREFORD, _SL_UP_G3, _SL_UP_IIA),               # Kolten 11-10: "BN PNW, BN Hereford, UP Group 3, UP Interior IA"
+    "SD": (_SL_HEREFORD, _SL_PNW, _SL_UP_G3, _SL_UP_IIA),               # Kolten 11-11: "BN Hereford & PNW, UP Group 3 & Interior IA"
     "NE": (_SL_UP_G3, _SL_UP_IIA, _SL_HEREFORD, _SL_PNW),               # Kolten 11-10: "UP Group 3 & Interior IA, BN Hereford and PNW" (COBO dropped)
     "KS": (_SL_UP_G3, _SL_UP_IIA, _SL_HEREFORD, _SL_PNW),
 }

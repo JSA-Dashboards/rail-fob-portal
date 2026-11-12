@@ -24,5 +24,6 @@ assert US.fob(bw, "Group 3", g3) - US.fob(bw, "Interior IA", iia) == 8
 # unnamed origins are par to their state's base; no stated rule elsewhere
 assert US.generic_spreads("IA")["iia"] == 0 and US.generic_spreads("IA")["g3"] == 8
 assert US.generic_spreads("NE")["g3"] == 0 and US.generic_spreads("NE")["iia"] == -8
-assert US.generic_spreads("MN") is None and US.generic_spreads("SD") is None
+assert US.generic_spreads("MN") is None and US.generic_spreads("ND") is None
+assert US.generic_spreads("SD")["iia"] == 0 and US.generic_spreads("SD")["g3"] == 8
 print("test_up_spreads: all ok")

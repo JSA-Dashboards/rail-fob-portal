@@ -309,3 +309,7 @@ A `return` that slid into an `else:` crashed the State Summary only when CN 105s
 
 ## State Level: Iowa Eastern / Western ethanol indexes (2026-11-11, Kolten: "index IA ethanol by region, Eastern Iowa vs Western IA")
 - `ETHANOL_SUBINDEX['IA']`: **Eastern IA index** (lon >= -93.6) and **Western IA index** (lon < -93.6, the Des Moines meridian; Jewell -93.64 falls west, Hanlontown -93.38 / Iowa Falls / Mason City east). Live 11-11: 17 eastern + 18 western plants (the tracker's Corn Processing set, so it includes non-ethanol processors such as GPC Washington, CHS Nestle Davenport, ADM / Cargill Cedar Rapids and Clinton, the same set the state Ethanol Index uses). `_state_location_rows` adds the plants to IA's named-group pull (`named_sql` carries no plants).
+
+## State Level: South Dakota (2026-11-11, Kolten: "BN Hereford & PNW, UP Group 3 & Interior IA, Eastern Ethanol and western ethanol")
+- Rows: the state Ethanol Index, **Eastern SD index** (lon >= -97.5: Watertown, Chancellor, Wentworth, Marion, Rosholt, Big Stone City, Hudson = 7 plants) and **Western SD index** (lon < -97.5: Scotland, Mitchell, Groton, Aberdeen, Mina, Onida = 6), then BN Hereford, BN PNW, UP Group 3, UP Interior IA. No river rows.
+- **ASSUMPTION**: no SD UP origin discount was stated, so `up_spreads.GENERIC['SD'] = Interior IA, par` (Group 3 comes through the 8c paper spread, i.e. 8c under). SD UP rows are State Level only (not on the State Summary), like Kansas. Replace when Kolten gives the real SD spreads.
