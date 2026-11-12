@@ -80,6 +80,15 @@ ndrows = [P("Guardian", "Hankinson", 46.07, -96.90, "Nov 2026", -48), P("Cargill
 nsub = SL.ethanol_subindex(ndrows, "ND")
 assert nsub["Eastern ND index"][(2026, 11)] == (-49.0, 2) and nsub["Western ND index"][(2026, 11)] == (-50.0, 1) and SL.RIVER_ORDER["ND"] == ()
 assert SL.RIVER_ORDER["MI"] == () and SL.ethanol_subindex([], "MI") == {}
+morows = [R("ADM", "St. Louis, MO (Elevator)", None, "Nov 2026", 24), R("Bunge", "Fairmont City, IL", None, "Nov 2026", 30), R("Ray-Carroll", "St. Louis, MO", None, "Nov 2026", 27),
+          R("ADM", "New Madrid, MO", None, "Nov 2026", 25), R("Cargill", "New Madrid", None, "Nov 2026", 23), R("CGB", "CGB LINDA", None, "Nov 2026", 99)]
+moidx = SL.river_index(morows, "MO")
+assert moidx["STL"][(2026, 11)] == (27.0, 3) and moidx["New Madrid"][(2026, 11)] == (24.0, 2) and SL.RIVER_ORDER["MO"] == ("STL", "New Madrid")
+fm = [P("Georges", "Cassville, MO", 36.68, -93.87, "Nov 2026", 30, ft="Feed Mill"), P("Tyson", "Aurora", 36.97, -93.70, "Nov 2026", 20, ft="Feed Mill"),
+      P("JBS", "Smithton, MO", 38.68, -93.09, "Nov 2026", 15, ft="Feed Mill"), P("Tyson", "Dexter", 36.79, -89.94, "Nov 2026", 5, ft="Feed Mill")]
+fm[0]["ts"] = "2026-10-09T00:00:00Z"
+fi = SL.feed_index(fm, "MO")
+assert fi[0] == "SW MO feed mill index" and fi[1][(2026, 11)] == (25.0, 2) and fi[2] == "2026-10-09" and SL.feed_index(fm, "IL") is None
 assert SL.ethanol_subindex(ksrows, "IL") == {}
 regrows = [P("Garden City Coop", "Garden City, KS", 37.94, -101.26, "Nov 2026", 10, ft="Country Elevator"),         # inside 60 miles
            P("Garden City Coop", "Lakin, KS", 37.94, -101.26, "Nov 2026", 20, ft="Country Elevator"),
