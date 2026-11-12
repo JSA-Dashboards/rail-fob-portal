@@ -317,3 +317,9 @@ A `return` that slid into an `else:` crashed the State Summary only when CN 105s
 ## State Level: North Dakota (2026-11-11, Kolten: "do the same with ND")
 - Same layout as SD: state Ethanol Index, **Eastern ND index** (lon >= -97.5, the Red River Valley: Hankinson, Wahpeton) and **Western ND index** (Dakota Spirit / Spiritwood, Blue Flint / Underwood; the tracker holds only four ND plants, and Dakota Spirit posts Jan / Feb only), then BN Hereford, BN PNW, UP Group 3, UP Interior IA. No river rows.
 - **ASSUMPTION**: `up_spreads.GENERIC['ND']` = par to Interior IA, like SD (no ND spread stated); ND UP rows are State Level only.
+
+## State Level: Michigan (2026-11-11, Kolten: "State Ethanol index and then CSX COL and Eville along with CN and NS")
+- Rows: the MI state Ethanol Index, then CSX COL, CSX Eville, CN 105s, NS (average freight spread, bid - freight). No river rows, no sub-indexes (`RIVER_ORDER['MI'] = ()`, `_SL_RAIL_BY_STATE['MI']`). Live 11-11: Nov Ethanol Index (19), CSX COL +7, Eville (8), NS +20; the CN row has no November value (no CN bid posted that month).
+
+## CN tab: the posted bids at the top (2026-11-12, Kolten: "list the bid offers FOB Champaign / Thomasboro like we do elsewhere")
+- The CN tab now opens with a **Rail FOB — CN 105s** grid (`_raw_corridor_table(['CN 105s', 'CN 105s Beans'], ..., labels=...)`, the same grid the CSX / NS / BN / UP tabs open with), rows labelled "CN 105s Corn · FOB Champaign / Thomasboro" and "CN 105s Beans · FOB Champaign / Thomasboro". The label override is local to the CN tab (`labels` argument), the Bids tab keeps its names. Live 11-12: corn Nov +12, Dec +15, Jan +3, JFM +6, AMJJ +5; beans Nov +17 ... The corn FOB tables below still net against CIF NOLA (only soybeans have a CN 105s bid option on this tab).

@@ -79,6 +79,7 @@ ndrows = [P("Guardian", "Hankinson", 46.07, -96.90, "Nov 2026", -48), P("Cargill
           P("Harvestone", "Blue Flint", 47.46, -101.14, "Nov 2026", -50)]                                                      # Western
 nsub = SL.ethanol_subindex(ndrows, "ND")
 assert nsub["Eastern ND index"][(2026, 11)] == (-49.0, 2) and nsub["Western ND index"][(2026, 11)] == (-50.0, 1) and SL.RIVER_ORDER["ND"] == ()
+assert SL.RIVER_ORDER["MI"] == () and SL.ethanol_subindex([], "MI") == {}
 assert SL.ethanol_subindex(ksrows, "IL") == {}
 regrows = [P("Garden City Coop", "Garden City, KS", 37.94, -101.26, "Nov 2026", 10, ft="Country Elevator"),         # inside 60 miles
            P("Garden City Coop", "Lakin, KS", 37.94, -101.26, "Nov 2026", 20, ft="Country Elevator"),

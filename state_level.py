@@ -13,6 +13,7 @@ Tracker ...; use the state ethanol index bids, not individuals"). Each cleaned-u
   IA  also Eastern / Western Iowa ethanol sub-indexes (split at 93.6 W, the Des Moines meridian).
   SD  no river rows; Eastern / Western South Dakota ethanol indexes (split at 97.5 W).
   ND  no river rows; Eastern (Red River Valley) / Western North Dakota ethanol indexes (split at 97.5 W).
+  MI  no river rows, no sub-indexes: the state Ethanol Index and the east rail rows.
   KS  Garden City region (every non-ethanol Kansas location the tracker has within 60 miles of Garden City) plus Northeast / Southwest Kansas ethanol indexes.
   NE  no river rows; Eastern / Central Nebraska ethanol indexes.
 
@@ -39,7 +40,7 @@ NAMED_GROUPS = {
            ("Cincinnati", (("Cargill", "Cincinnati Kellogg"), ("Cargill", "Cincinnati River Road")))),
 }
 # river-row group names per cleaned state, in display order (a state in here has no pickers; NE and KS have no river rows, KS has the Garden City region instead)
-RIVER_ORDER = {"IL": IL_RIVER_ORDER, **{st: tuple(g for g, _m in groups) for st, groups in NAMED_GROUPS.items()}, "NE": (), "KS": (), "SD": (), "ND": ()}
+RIVER_ORDER = {"IL": IL_RIVER_ORDER, **{st: tuple(g for g, _m in groups) for st, groups in NAMED_GROUPS.items()}, "NE": (), "KS": (), "SD": (), "ND": (), "MI": ()}
 
 # ---- state ethanol SUB-indexes (Kolten, 2026-11-10): the plants of a state split by where they sit. (label, test on (lat, lon)); a plant outside every box (West Nebraska)
 # stays in the state Ethanol Index only. The tracker holds only four Kansas plants, so those indexes are one or two plants each.
